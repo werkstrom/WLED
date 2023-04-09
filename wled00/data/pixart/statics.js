@@ -4,6 +4,7 @@ var szX = gId("sizeX");
 var szY = gId("sizeY");
 var szDiv = gId("sizeDiv"); 
 var prw = gId("preview");
+var lib = gId("lib");
 var sID = gId('segID');
 var JLD = gId('JSONled');
 var tSg = gId('targetSegment');

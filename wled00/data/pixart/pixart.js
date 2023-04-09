@@ -213,8 +213,34 @@ function updatePreview(file) {
   reader.onload = () => {
     // Update the preview image
     preview.src = reader.result;
+    
+    // Add a new image to lib
+    const iTs = document.querySelectorAll('#lib img');
+    let mxN = 0;
+    iTs.forEach((img) => {
+      const idN = parseInt(img.id.slice(1));
+      if (idN > mxN) {
+        mxN = idN;
+      }
+    });
+
+    const lstImg = gId(`i${mxN}`); //Last image in library
+    nNo = mxN + 1;
+    let nID = `i${nNo}`; //New img ID
+    console.log(`New Image ID is: ${nID}`);
+    const newImgAlt = `Library image ${nNo}`;
+    lstImg.insertAdjacentHTML('afterend', `<img id="${nID}" src="${preview.src}" alt=Library image "${nNo}" width="64" height="64">`);
     //gId("submitConvertDiv").style.display = "";
+
+    //Delete i0 if exists
+    toDel = gId("i0");
+    if(toDel){
+      toDel.parentNode.removeChild(toDel);
+    }
+
+
     prw.style.display = "";
+    lib.style.display = "";
   };
   reader.readAsDataURL(file);
 }
