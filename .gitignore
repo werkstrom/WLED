@@ -19,3 +19,11 @@ esp01-update.sh
 /wled00/LittleFS
 replace_fs.py
 wled00/wled00.ino.cpp
+tools/cdata.js
+wled00/data/pixart/minified/pixart.htm
+wled00/html_other.h
+wled00/html_pixart.h
+wled00/html_settings.h
+wled00/html_simple.h
+wled00/html_ui.h
+

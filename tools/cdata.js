@@ -21,6 +21,7 @@ const zlib = require("zlib");
 const CleanCSS = require("clean-css");
 const MinifyHTML = require("html-minifier-terser").minify;
 const packageJson = require("../package.json");
+const { minify } = require("html-minifier-terser");
 
 /**
  *
@@ -116,11 +117,29 @@ function writeHtmlGzipped(sourceFile, resultFile, page) {
     html = filter(html, "html-minify-ui");
     console.info("Minified to " + html.length + " characters");
 
+    //Added to write a minified version of pixart for stand alone distro
+    if (page == 'pixart'){
+      minifyedFile = sourceFile.replace('/pixart/', '/pixart/minified/')
+      console.log('Writing minified file: ', minifyedFile);
+      const currentDate = new Date();
+      const year = currentDate.getFullYear();
+      const month = ('0' + (currentDate.getMonth() + 1)).slice(-2);
+      const day = ('0' + currentDate.getDate()).slice(-2);
+      const hours = ('0' + currentDate.getHours()).slice(-2);
+      const minutes = ('0' + currentDate.getMinutes()).slice(-2);
+      const seconds = ('0' + currentDate.getSeconds()).slice(-2);
+      const buildID = `${year}.${month}.${day}.${hours}.${minutes}.${seconds}`;
+      console.log(buildID);
+      fs.writeFileSync(minifyedFile, html.replace('title="PAC version"', `title="PAC version ${buildID}"`));
+    }
+    //END Added for pixart
+
+
     if (error) {
       console.warn(error);
       throw error;
     }
-
+    
     html = adoptVersionAndRepo(html);
     zlib.gzip(html, { level: zlib.constants.Z_BEST_COMPRESSION }, function (error, result) {
       if (error) {

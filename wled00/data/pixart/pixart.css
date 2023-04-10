@@ -59,12 +59,21 @@ p {
   font-family: Arial, sans-serif;
 }
 
+.scaleTableClass   {
+  font-size: 1  em;
+  color: #777;
+  line-height: 1;
+  font-family: Arial, sans-serif;
+}
+
+/*
 #scaleTable {
   font-size: 1  em;
   color: #777;
   line-height: 1;
   font-family: Arial, sans-serif;
 }
+*/
 
 #drop-zone {
   display: block;
@@ -88,7 +97,7 @@ p {
   flex-direction: row;
   flex-wrap: nowrap;
   align-items: center;
-
+  vertical-align: middle;
 }
 
 .mainSelector {
@@ -122,6 +131,10 @@ p {
 }
 
 .segmentsDiv{
+  width: 36px;
+  padding-left: 5px;
+}
+.sndRnDiv{
   width: 36px;
   padding-left: 5px;
 }
@@ -241,6 +254,12 @@ input[type=range]::-moz-range-thumb {
   vertical-align: middle;
 }
 
+#runDiv {
+  display: flex;
+  align-items: center;
+  vertical-align: middle;
+}
+
 textarea {
   grid-row: 1 / 2;
   width: 100%;
@@ -321,4 +340,16 @@ a:active {
   color: rgba(221, 221, 221, 0.61);
   background-color: transparent;
   text-decoration: none;
+}
+
+.stpIconTD {
+  /*display: inline-block;*/
+  width: 36px;
+  margin: 0;
+}
+
+.stpDur {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }

@@ -32,7 +32,6 @@ function gen(){
       imin.style.display = "block";
       imcn.style.display = "none";
       JLD.value = '';
-      if (devMode) console.log("The string '" + base64Image + "' is not a valid base64 image.");
     }
   }
   
@@ -124,8 +123,6 @@ async function postPixels() {
   let er = false;
   for (let i of httpArray) {
     try {
-      if (devMode) console.log(i);
-      if (devMode) console.log(i.length);
       const response = await fetch('http://'+gId('curlUrl').value+'/json/state', {
         method: 'POST',
         headers: {
@@ -135,7 +132,6 @@ async function postPixels() {
         body: i
       });
       const data = await response.json();
-      if (devMode) console.log(data);
     } catch (error) {
       console.error(error);
       er = true;
@@ -208,6 +204,7 @@ function filePicked(e) {
 
 // Update the preview image
 function updatePreview(file) {
+  let nImg = ''
   // Use FileReader to read the file
   const reader = new FileReader();
   reader.onload = () => {
@@ -227,33 +224,47 @@ function updatePreview(file) {
     const lstImg = gId(`i${mxN}`); //Last image in library
     nNo = mxN + 1;
     let nID = `i${nNo}`; //New img ID
-    console.log(`New Image ID is: ${nID}`);
     const newImgAlt = `Library image ${nNo}`;
-    lstImg.insertAdjacentHTML('afterend', `<img id="${nID}" src="${preview.src}" alt=Library image "${nNo}" width="64" height="64">`);
-    //gId("submitConvertDiv").style.display = "";
+    lstImg.insertAdjacentHTML('afterend', `<img id="${nID}" src="${preview.src}" alt="Library image ${nNo}" title="Image ${nNo}" width="64" height="64">`);
 
-    //Delete i0 if exists
+    nImg = gId(nID);
+    nImg.setAttribute("data-issel", 1);
+    nImg.style.border = "2px solid #eee";
+    nImg.addEventListener('click', clkImg);
+    //Delete i0 if exists as i0 is only a placeholder to make the general code of inserting simple.
     toDel = gId("i0");
     if(toDel){
       toDel.parentNode.removeChild(toDel);
     }
-
-
     prw.style.display = "";
     lib.style.display = "";
   };
   reader.readAsDataURL(file);
+  
+  setFoc(nImg);
+}
+
+function setFoc(im){
+  const iTs = document.querySelectorAll('#lib img');
+  iTs.forEach((iTs) => {
+    if(im.srcElement!=iTs){
+      iTs.style.border = `2px solid #444`;
+      iTs.setAttribute("data-isSel", 0);
+    }else{
+      //for the selected image
+      iTs.style.border = "2px solid #eee";
+      iTs.setAttribute("data-isSel", 1);
+    }
+  });
+  
+}
+
+function clkImg(e){
+  setFoc(e);
+  prw.src = e.srcElement.src;
 }
 
 function isValidBase64Gif(string) {
-  // Use a regular expression to check that the string is a valid base64 string
-  /*
-  const base64gifPattern = /^data:image\/gif;base64,([A-Za-z0-9+/:]{4})*([A-Za-z0-9+/:]{3}=|[A-Za-z0-9+/:]{2}==)?$/;
-  const base64pngPattern = /^data:image\/png;base64,([A-Za-z0-9+/:]{4})*([A-Za-z0-9+/:]{3}=|[A-Za-z0-9+/:]{2}==)?$/;
-  const base64jpgPattern = /^data:image\/jpg;base64,([A-Za-z0-9+/:]{4})*([A-Za-z0-9+/:]{3}=|[A-Za-z0-9+/:]{2}==)?$/;
-  const base64webpPattern = /^data:image\/webp;base64,([A-Za-z0-9+/:]{4})*([A-Za-z0-9+/:]{3}=|[A-Za-z0-9+/:]{2}==)?$/;
-  */
-  //REMOVED, Any image appear to work as long as it can be drawn to the canvas. Leaving code in for future use, possibly
   if (1==1 || base64gifPattern.test(string) || base64pngPattern.test(string) || base64jpgPattern.test(string) || base64webpPattern.test(string)) {
     return true;
   } else {
@@ -276,21 +287,165 @@ function switchScale() {
   //let scalePath = gId("scaleDiv").children[1].children[0]
   let scaleTogglePath = scDiv.children[0].children[0]
   let color = scaleTogglePath.getAttribute("fill");
-  let d = '';
+  let dd = '';
   if (color === accentColor) {
     color = accentTextColor;
-    d = scaleToggleOffd;
+    dd = scaleToggleOffd;
     szDiv.style.display = "none";
     // Set values to actual XY of image, if possible
   } else {
     color = accentColor;
-    d = scaleToggleOnd;
+    dd = scaleToggleOnd;
     szDiv.style.display = "";
   }
   //scalePath.setAttribute("fill", color);
   scaleTogglePath.setAttribute("fill", color);
-  scaleTogglePath.setAttribute("d", d);
+  scaleTogglePath.setAttribute("d", dd);
   gen();
+}
+
+function switchRun() {
+  //let scalePath = gId("scaleDiv").children[1].children[0]
+  let runTogglePath = rnDiv.children[0].children[0]
+  let color = runTogglePath.getAttribute("fill");
+  let dd = '';
+  if (color === accentColor) {
+    color = accentTextColor;
+    dd = scaleToggleOffd;
+    gId("rnTD").style.display = "none";
+    // Set values to actual XY of image, if possible
+  } else {
+    color = accentColor;
+    dd = scaleToggleOnd;
+    gId("rnTD").style.display = "";
+  }
+  //scalePath.setAttribute("fill", color);
+  runTogglePath.setAttribute("fill", color);
+  runTogglePath.setAttribute("d", dd);
+  gen();
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+function setStpImg(e){
+  i = e.srcElement.ownerSVGElement;
+  selim = "";
+  if(i){ //the path triggered the event
+    nr = i.id.replace("loadImgSVG", "");
+  } else{ //the SVG itself was clicked
+    nr = e.srcElement.id.replace("loadImgSVG", "");
+  }
+  const imgs = gId("lib").getElementsByTagName("img");
+  for (let i = 0; i < imgs.length; i++) {
+    const issel = imgs[i].getAttribute("data-issel")
+    if (issel == 1) {
+      selim = imgs[i];
+      break;
+    }
+  }
+  td = gId(`stp${nr}ImgTD`);
+  td.innerHTML = `<img id="stp${nr}Img" src="${selim.src}" alt="Step image ${nr}" title="Step ${nr}, ${selim.title}" width="36" height="36" "data-baseimg"=${selim.id}>`; 
+}
+
+function addStpImg(e){
+  i = e.srcElement.ownerSVGElement;
+  selim = "";
+  if(i){ //the path triggered the event
+    nr = i.id.replace("addRowSVG", "");
+  } else{ //the SVG itself was clicked
+    nr = e.srcElement.id.replace("addRowSVG", "");
+  }
+  let nxnr = parseInt(nr) + 1;
+  thisTR = gId(`stp${nr}`);
+  
+  //Replace with the next idno
+  const regex = /XxX/g;
+  const NewTRHTML = stpTR.replace(regex, (match) => {
+    return nxnr;
+  });
+
+  var trs = Array.from(gId("rnLst").getElementsByTagName('tr'));
+  var toMove = [];
+  trs.forEach(function(i) {
+    thisNr = parseInt(i.id.replace("stp", ""));
+    if(thisNr>nr){
+      toMove.push(thisNr);
+    }
+  });
+  toMove.sort(function(a, b) {
+    return b - a;
+  })
+  toMove.forEach(function(i){
+    moveStep(i, i+1);
+  });
+  // Create a new TR element
+  var newTR = document.createElement('tr');
+  newTR.id = `stp${nxnr}`;
+  newTR.setAttribute("data-json", "")
+  newTR.style = "display: flex; align-items: center;";
+  newTR.innerHTML = NewTRHTML;
+  // Insert the new TR element after thisTR
+  thisTR.parentNode.insertBefore(newTR, thisTR.nextSibling);
+  gId(`loadImgSVG${nxnr}`).addEventListener('click', setStpImg);
+  gId(`addRowSVG${nxnr}`).addEventListener('click', addStpImg);
+  gId(`delRowSVG${nxnr}`).addEventListener('click', delStpImg);
+}
+
+function delStpImg(e){
+  i = e.srcElement.ownerSVGElement;
+  selim = "";
+  if(i){ //the path triggered the event
+    nr = i.id.replace("delRowSVG", "");
+  } else{ //the SVG itself was clicked
+    nr = e.srcElement.id.replace("delRowSVG", "");
+  }
+  console.log("Del", nr)
+  gId(`stp${nr}`).remove();
+
+  var trs = Array.from(gId("rnLst").getElementsByTagName('tr'));
+  var toMove = [];
+  trs.forEach(function(i) {
+    thisNr = parseInt(i.id.replace("stp", ""));
+    if(thisNr>nr){
+      toMove.push(thisNr);
+    }
+  });
+  toMove.sort();
+  toMove.forEach(function(i){
+    moveStep(i, i-1);
+  });
+  console.log(toMove);
+}
+
+function chkDelOK(){
+  //Needs to be more than one row to delete rows
+  if(2==1){
+    gId(`stp${newN}Del`).style.display = "none";
+  }else{
+    gId(`stp${newN}Del`).style.display = "";
+  }
+}
+
+function moveStep(oldN, newN){
+  console.log(`Setting step ${oldN} to ${newN}`)
+  //Make sure calling this in the correct order so new always is empty first
+  gId(`stp${oldN}`).id = `stp${newN}`;
+  gId(`stp${oldN}Load`).id = `stp${newN}Load`;
+  gId(`loadImgSVG${oldN}`).id = `loadImgSVG${newN}`;
+  gId(`stp${oldN}ImgTD`).id = `stp${newN}ImgTD`;
+  
+  const imIs = gId(`empImgSVG${oldN}`);
+  if(imIs){
+    gId(`empImgSVG${oldN}`).id = `empImgSVG${newN}`
+  }else{
+    gId(`stp${oldN}Img`).id = `stp${newN}Img`;
+  };
+  
+  gId(`stp${oldN}Dur`).id = `stp${newN}Dur`;
+  gId(`stp${oldN}DurFld`).id = `stp${newN}DurFld`;
+  gId(`stp${oldN}Add`).id = `stp${newN}Add`;
+  gId(`addRowSVG${oldN}`).id = `addRowSVG${newN}`;
+  gId(`stp${oldN}Del`).id = `stp${newN}Del`;
+  gId(`delRowSVG${oldN}`).id = `delRowSVG${newN}`;
 }
 
 function generateSegmentOptions(array) {
@@ -374,13 +529,17 @@ generateSegmentOptions(segmentData);
 
 seDiv.innerHTML =
 '<svg id=getSegmentsSVG style="width:36px;height:36px;cursor:pointer" viewBox="0 0 24 24" onclick="getSegments()"><path id=sSg fill="currentColor" d="M6.5 20Q4.22 20 2.61 18.43 1 16.85 1 14.58 1 12.63 2.17 11.1 3.35 9.57 5.25 9.15 5.68 7.35 7.38 5.73 9.07 4.1 11 4.1 11.83 4.1 12.41 4.69 13 5.28 13 6.1V12.15L14.6 10.6L16 12L12 16L8 12L9.4 10.6L11 12.15V6.1Q9.1 6.45 8.05 7.94 7 9.43 7 11H6.5Q5.05 11 4.03 12.03 3 13.05 3 14.5 3 15.95 4.03 17 5.05 18 6.5 18H18.5Q19.55 18 20.27 17.27 21 16.55 21 15.5 21 14.45 20.27 13.73 19.55 13 18.5 13H17V11Q17 9.8 16.45 8.76 15.9 7.73 15 7V4.68Q16.85 5.55 17.93 7.26 19 9 19 11 20.73 11.2 21.86 12.5 23 13.78 23 15.5 23 17.38 21.69 18.69 20.38 20 18.5 20M12 11.05Z" /></svg>'
-/*gId("convertbutton").innerHTML = 
-'<svg style="width:36px;height:36px" viewBox="0 0 24 24"><path fill="currentColor" d="M12,6V9L16,5L12,1V4A8,8 0 0,0 4,12C4,13.57 4.46,15.03 5.24,16.26L6.7,14.8C6.25,13.97 6,13 6,12A6,6 0 0,1 12,6M18.76,7.74L17.3,9.2C17.74,10.04 18,11 18,12A6,6 0 0,1 12,18V15L8,19L12,23V20A8,8 0 0,0 20,12C20,10.43 19.54,8.97 18.76,7.74Z" /> </svg>&nbsp; Convert to WLED JSON '; 
-*/
+
 cjb.innerHTML = 
 '<svg class="svg-icon" style="width:36px;height:36px" viewBox="0 0 24 24"> <path fill="currentColor" d="M19,21H8V7H19M19,5H8A2,2 0 0,0 6,7V21A2,2 0 0,0 8,23H19A2,2 0 0,0 21,21V7A2,2 0 0,0 19,5M16,1H4A2,2 0 0,0 2,3V17H4V3H16V1Z" /> </svg>&nbsp; Copy to clipboard'; 
+
 gId("sendJSONledbutton").innerHTML = 
 '<svg class="svg-icon" style="width:36px;height:36px" viewBox="0 0 24 24"> <path id=sendSvgP fill="currentColor" d="M6.5 20Q4.22 20 2.61 18.43 1 16.85 1 14.58 1 12.63 2.17 11.1 3.35 9.57 5.25 9.15 5.88 6.85 7.75 5.43 9.63 4 12 4 14.93 4 16.96 6.04 19 8.07 19 11 20.73 11.2 21.86 12.5 23 13.78 23 15.5 23 17.38 21.69 18.69 20.38 20 18.5 20H13Q12.18 20 11.59 19.41 11 18.83 11 18V12.85L9.4 14.4L8 13L12 9L16 13L14.6 14.4L13 12.85V18H18.5Q19.55 18 20.27 17.27 21 16.55 21 15.5 21 14.45 20.27 13.73 19.55 13 18.5 13H17V11Q17 8.93 15.54 7.46 14.08 6 12 6 9.93 6 8.46 7.46 7 8.93 7 11H6.5Q5.05 11 4.03 12.03 3 13.05 3 14.5 3 15.95 4.03 17 5.05 18 6.5 18H9V20M12 13Z" /> </svg>&nbsp; Send to device';
+
+gId("rnTD").style.display = 'none'
+gId("loadImgSVG1").addEventListener("click", setStpImg);
+gId("addRowSVG1").addEventListener("click", addStpImg);
+gId("delRowSVG1").addEventListener("click", delStpImg);
 
 //After everything is loaded, check if we have a possible IP/host
 
