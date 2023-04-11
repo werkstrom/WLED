@@ -5,8 +5,11 @@
 //} else
 //
 //Start up code
-let devMode =  false; //Remove
 gurl.value = location.host;
+var aAr = [];
+var curStp = 0;
+var animTOId;
+var isRep = 0;
 
 const urlParams = new URLSearchParams(window.location.search);
 if (gurl.value.length < 1){
@@ -127,7 +130,6 @@ async function postPixels() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
-          //'Content-Type': 'text/html; charset=UTF-8'
         },
         body: i
       });
@@ -325,7 +327,6 @@ function switchRun() {
   gen();
 }
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
 function setStpImg(e){
   i = e.srcElement.ownerSVGElement;
   selim = "";
@@ -343,7 +344,7 @@ function setStpImg(e){
     }
   }
   td = gId(`stp${nr}ImgTD`);
-  td.innerHTML = `<img id="stp${nr}Img" src="${selim.src}" alt="Step image ${nr}" title="Step ${nr}, ${selim.title}" width="36" height="36" "data-baseimg"=${selim.id}>`; 
+  td.innerHTML = `<img id="stp${nr}Img" src="${selim.src}" alt="Step image ${nr}" title="Image: ${selim.title}" width="36" height="36" data-baseimg=${selim.id}>`; 
 }
 
 function addStpImg(e){
@@ -398,7 +399,6 @@ function delStpImg(e){
   } else{ //the SVG itself was clicked
     nr = e.srcElement.id.replace("delRowSVG", "");
   }
-  console.log("Del", nr)
   gId(`stp${nr}`).remove();
 
   var trs = Array.from(gId("rnLst").getElementsByTagName('tr'));
@@ -413,7 +413,6 @@ function delStpImg(e){
   toMove.forEach(function(i){
     moveStep(i, i-1);
   });
-  console.log(toMove);
 }
 
 function chkDelOK(){
@@ -426,9 +425,9 @@ function chkDelOK(){
 }
 
 function moveStep(oldN, newN){
-  console.log(`Setting step ${oldN} to ${newN}`)
   //Make sure calling this in the correct order so new always is empty first
   gId(`stp${oldN}`).id = `stp${newN}`;
+  gId(`stp${oldN}Load`).title = `Step ${newN}`;
   gId(`stp${oldN}Load`).id = `stp${newN}Load`;
   gId(`loadImgSVG${oldN}`).id = `loadImgSVG${newN}`;
   gId(`stp${oldN}ImgTD`).id = `stp${newN}ImgTD`;
@@ -522,6 +521,140 @@ function generateSegmentArray(noOfSegments) {
   }
   return arr;
 }
+
+//Animating according to list setup
+function anim(){
+  var localaAr = [];
+  gId("playSVG").innerHTML=stopSVGPath;
+  gId("prwRnDiv").onclick = stopAnim;
+  aAr = [];
+  curStp = 0;
+  var trs = Array.from(gId("rnLst").getElementsByTagName('tr'));
+  trs.forEach(function(tr) {
+    const stpId = tr.id.replace("stp", "");
+    const imgTD = tr.getElementsByClassName("stpImgTD")[0];
+    const imgTG =  imgTD.querySelector("img");
+    const imgId = imgTG.getAttribute("data-baseimg");
+    const durTD = tr.getElementsByClassName("stpDur")[0];
+    const durTG =  durTD.querySelector("input");
+    const dur = durTG.value;
+    aAr.push({ stpId: stpId, imgId: imgId, dur: dur });
+  });
+  curStp = 0;
+  animateSteps(curStp);
+}
+
+function animateSteps(curStp) {
+  if (curStp >= aAr.length || curStp < 0) {
+    stopAnim();
+    return;
+  }
+  var stp = aAr[curStp];
+  gId(stp.imgId).click();
+  if(curStp + 1 >= aAr.length && isRep == 1){
+    nStp = 0;
+  } else{
+    nStp = curStp + 1;
+  }
+
+  animTOId = setTimeout(function() {
+    animateSteps(nStp);
+  }, stp.dur);
+} 
+
+document.addEventListener("dblclick", function() {
+  stopAnim();
+});
+
+function stopAnim(){
+  clearTimeout(animTOId);
+  gId("playSVG").innerHTML=playSVGPath;
+  gId("prwRnDiv").onclick = anim;
+}
+
+function setRep(){
+  pth =  gId("repPath");
+  if(pth.getAttribute("fill") == '#eeeeee'){
+    pth.setAttribute("fill", inactiveColor)
+    isRep = 0;
+  } else{
+    pth.setAttribute("fill", accentColor)
+    isRep = 1;
+  };
+}
+
+async function sendAnim() {
+  //set base data
+  let theJSONobj = {
+    "description": gId("rnID").value,
+    "created": new Date().toLocaleString().substring(0, 16).replace(',', '')  
+  };
+  theJSONobj["repeat"] = isRep === 1 ? true : false;
+  //Get all used images
+  sAr = [];
+  var trs = Array.from(gId("rnLst").getElementsByTagName('tr'));
+  trs.forEach(function(tr) {
+    const stpId = tr.id.replace("stp", "");
+    const imgTD = tr.getElementsByClassName("stpImgTD")[0];
+    const imgTG =  imgTD.querySelector("img");
+    const imgId = imgTG.getAttribute("data-baseimg");
+    const durTD = tr.getElementsByClassName("stpDur")[0];
+    const durTG =  durTD.querySelector("input");
+    const dur = durTG.value;
+    sAr.push({ stpId: stpId, imgId: imgId, dur: dur });
+  });
+
+  //Create a command batch for each unique image (could be split into several commands to keep size of each command down)
+  let cAr = [...new Set(sAr.map(item => item.imgId))];
+  sets = []
+  const result = await itcAr(cAr);
+  theJSONobj["sets"] = result;
+
+  //Create a step list from sAr, referencing the commands
+  sAr.sort((a, b) => a.stpId - b.stpId);
+  const stpAr = sAr.map((item, index) => {
+    return {
+      step: index + 1, //using index instead of stpId to assure no gaps in sequece
+      commandId: item.imgId,
+      duration: item.dur
+    }
+  });
+  theJSONobj["steps"] = stpAr;
+
+
+  console.log("Final JSON: ", theJSONobj);
+}
+
+
+async function itcAr(cAr) {
+  const result = [];
+  for (const i of cAr) {
+    const res = await setImg(i);
+    const comAr = httpArray.map((command, index) => {
+      return {
+        position: index + 1,
+        command: JSON.parse(command)
+      }
+    });
+    let tObj = {
+      "id": i,
+      "commands": comAr
+    }
+    result.push(tObj);
+  }
+  return result;
+}
+
+async function setImg(i) {
+  return new Promise(resolve => {
+    gId(i).click();
+    //Bit of a dirty solution to make sure the image is rendered and the HTTParray is created.
+    setTimeout(() => {
+      resolve(i);
+    }, 200);
+  });
+}
+
 
 var segmentData = generateSegmentArray(10);
 

@@ -220,6 +220,24 @@ input[type=range]::-moz-range-thumb {
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.durFld{
+  background-color: #222;
+  border: 1px solid #333;
+  padding-inline-start: 5px;
+  height: 24px;
+  border-radius: 0px;
+  font-family: Arial, sans-serif;
+  font-size: 15px;
+  color: #ddd;
+  border-radius: 7px;
+  flex-grow: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 * input[type=submit] {
@@ -343,6 +361,12 @@ a:active {
 }
 
 .stpIconTD {
+  /*display: inline-block;*/
+  width: 36px;
+  margin: 0;
+}
+
+.stpImgTD {
   /*display: inline-block;*/
   width: 36px;
   margin: 0;
