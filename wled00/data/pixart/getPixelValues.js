@@ -214,8 +214,8 @@ function getPixelRGBValues(base64Image) {
       } else{
         //Write every pixel
         if (JSONledString == ''){
-          //If addressing is single, we need to start every command with a starting possition
-          JSONledString = i
+          //If addressing is single, we need to start every command with a starting possition missing comma after 2023-04-12
+          JSONledString = `${i},`;
           //Fixed to b2
         }
 
