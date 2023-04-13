@@ -16,7 +16,7 @@ if (gurl.value.length < 1){
   gurl.value = "Missing_Host";
 }
 
-function gen(){
+function gen(returnArray = false){
   //Generate image if enough info is in place
   //Is host non empty
   //Is image loaded
@@ -26,7 +26,13 @@ function gen(){
     let base64Image = prw.src;
     if (isValidBase64Gif(base64Image)) {
       im.src = base64Image;
-      getPixelRGBValues(base64Image);
+      
+      //If we only want a RGB, color array for writing to disk. Then we're done and can return
+      if (returnArray) {
+        return getPixelRGBValues(base64Image, true);// return the array and stop further execution of the function
+      } else{
+        getPixelRGBValues(base64Image);
+      }
       imcn.style.display = "block";
       bcn.style.display = "";
     } else {
@@ -614,7 +620,7 @@ async function sendAnim() {
   let cAr = [...new Set(sAr.map(item => item.imgId))];
   sets = []
   const result = await itcAr(cAr);
-  theJSONobj["sets"] = result;
+  theJSONobj["sets"] = result.map(row => row[2]); //only get the JSON objects
 
   //Create a step list from sAr, referencing the commands
   sAr.sort((a, b) => a.stpId - b.stpId);
@@ -628,6 +634,7 @@ async function sendAnim() {
   theJSONobj["steps"] = stpAr;
   const fileName = `/flow_${rnID}.json`;
   uploadJSON(JSON.stringify(theJSONobj), fileName);
+  uploadBitArray(result, stpAr, rnID);
   console.log('File: ', fileName, 'JSON: ', theJSONobj);
 }
 
@@ -642,11 +649,12 @@ async function itcAr(cAr) {
         command: JSON.parse(command)
       }
     });
+    const rawAr = new Uint8Array(rawRGBArray)
     let tObj = {
       "id": i,
       "commands": comAr
     }
-    result.push(tObj);
+    result.push([i, rawAr, tObj]);
   }
   return result;
 }
@@ -682,6 +690,38 @@ function uploadJSON(jsonString, fileName) {
   var formData = new FormData();
   formData.append("data", blob, fileName);
   req.send(formData);
+  return false;
+}
+
+function uploadBitArray(result, stpAr, rnID){
+
+  result.forEach(function(arr) {
+    const req = new XMLHttpRequest();
+    byteArray = new Uint8Array(arr[1]);
+    const blob = new Blob([new Uint8Array(byteArray)], {type: 'application/octet-stream'});
+    //Note: For some reason I needed to first create a bytearray from the base array, then create a NEW byteArray from the newly created bytearray... To get to write pure bytes.
+    fileName = `/fl_${rnID}_c${arr[0]}.bin`
+ 
+    req.addEventListener('load', function(){
+      console.log(this.responseText, ' - ',  this.status);
+      gId("sendSvgP").setAttribute("fill", greenColor);
+      setTimeout(function(){ 
+        gId("sendSvgP").setAttribute("fill", accentColor);
+      }, 1000);
+    });
+    req.addEventListener('error', function(e){
+      console.log('Error: ', e); console.log(' Status: ', this.status);
+      gId("sendSvgP").setAttribute("fill", greenColor);
+      setTimeout(function(){ 
+        gId("sendSvgP").setAttribute("fill", accentColor);
+      }, 2000);
+    });
+  
+    req.open("POST", "/upload");
+    var formData = new FormData();
+    formData.append("data", blob, fileName);
+    req.send(formData);
+  });
   return false;
 }
 

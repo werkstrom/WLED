@@ -34,6 +34,7 @@ var cLV = gId("colorLimitValue");
 var sndRnDivgId = gId("sndRnDiv");
 //vars
 var httpArray = [];
+var rawRGBArray = []; //Used to get a byteArray representation of the  images for writing to FS on the WLED device
 var fileJSON = '';
 
 var hideableRows = d.querySelectorAll(".ha-hide");

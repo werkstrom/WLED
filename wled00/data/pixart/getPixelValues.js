@@ -1,5 +1,9 @@
 function getPixelRGBValues(base64Image) {
-  httpArray = [];
+  httpArray = []; 
+  rawRGBArray = [];
+
+  console.log("Generating RGB")
+
   fileJSON = `{"on":true,"bri":${brgh.value},"seg":{"id":${tSg.value},"i":[`;
 
   //Which object holds the secret to the segment ID
@@ -83,6 +87,8 @@ function getPixelRGBValues(base64Image) {
     // Set the canvas size to the same as the desired image size
     canvas.width = sizeX;
     canvas.height = sizeY;
+    const uint8ArraySize = sizeX*sizeY;
+    const uint8Array = new Uint8Array(uint8ArraySize);
 
     imageInfo = '<p>Width: ' + sizeX + ', Height: ' + sizeY + ' (make sure this matches your led matrix setup)</p>'
 
@@ -91,8 +97,9 @@ function getPixelRGBValues(base64Image) {
 
     // Get the pixel data from the canvas
     var pixelData = context.getImageData(0, 0, sizeX, sizeY).data;
-  
-    // Create an array to hold the RGB values of each pixel
+    rawRGBArray = [...pixelData.filter((_, index) => (index + 1) % 4 !== 0)]; //Removes the transparency byte and copies the array with no link to the original array, just to be safe.
+    
+        // Create an array to hold the RGB values of each pixel
     var pixelRGBValues = [];
 
     // If the first row of the led matrix is right -> left
