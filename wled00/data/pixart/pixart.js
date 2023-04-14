@@ -697,10 +697,8 @@ function uploadBitArray(result, stpAr, rnID){
 
   result.forEach(function(arr) {
     const req = new XMLHttpRequest();
-    byteArray = new Uint8Array(arr[1]);
-    const blob = new Blob([new Uint8Array(byteArray)], {type: 'application/octet-stream'});
-    //Note: For some reason I needed to first create a bytearray from the base array, then create a NEW byteArray from the newly created bytearray... To get to write pure bytes.
-    fileName = `/fl_${rnID}_c${arr[0]}.bin`
+    const blob = new Blob([new Uint8Array(arr[1])], {type: 'application/octet-stream'});
+    fileName = `/fl_${rnID}_c${arr[0]}.bin`.
  
     req.addEventListener('load', function(){
       console.log(this.responseText, ' - ',  this.status);
