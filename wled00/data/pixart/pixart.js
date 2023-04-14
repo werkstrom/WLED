@@ -530,10 +530,11 @@ function generateSegmentArray(noOfSegments) {
 function anim(){
   var localaAr = [];
   gId("sendSvgP").setAttribute("fill", inactiveColor);
-  gId("sndRnDiv").onclick = "";
+  gId("sndRnDiv").removeEventListener("click", sendAnim);
   gId("sndRnDiv").title = "Sending disabled while animating";
   gId("playSVG").innerHTML=stopSVGPath;
-  gId("prwRnDiv").onclick = stopAnim;
+  gId("prwRnDiv").removeEventListener("click", anim);
+  gId("prwRnDiv").addEventListener('click',stopAnim);
   aAr = [];
   curStp = 0;
   var trs = Array.from(gId("rnLst").getElementsByTagName('tr'));
@@ -576,15 +577,19 @@ document.addEventListener("dblclick", function() {
 function stopAnim(){
   clearTimeout(animTOId);
   gId("playSVG").innerHTML=playSVGPath;
-  gId("prwRnDiv").onclick = anim;
+  
+  gId("prwRnDiv").removeEventListener("click", stopAnim);
+  gId("prwRnDiv").addEventListener('click', anim);
   gId("sendSvgP").setAttribute("fill", accentColor);
+  gId("sndRnDiv").removeEventListener("click", sendAnim);
   gId("sndRnDiv").addEventListener("click", sendAnim);
   gId("sndRnDiv").title = "Send animation file to device";
 }
 
-function setRep(){
+function setRep(e){
   pth =  gId("repPath");
-  if(pth.getAttribute("fill") == '#eeeeee'){
+  console.log(e, pth.getAttribute("fill"), accentColor, inactiveColor);
+  if(pth.getAttribute("fill") == accentColor){
     pth.setAttribute("fill", inactiveColor)
     isRep = 0;
   } else{
@@ -593,7 +598,8 @@ function setRep(){
   };
 }
 
-async function sendAnim() {
+async function sendAnim(e) {
+  
   //set base data
   gId("sendSvgP").setAttribute("fill", inactiveColor);
   let rnID = gId("rnID").value
@@ -635,7 +641,7 @@ async function sendAnim() {
   const fileName = `/flow_${rnID}.json`;
   uploadJSON(JSON.stringify(theJSONobj), fileName);
   uploadBitArray(result, stpAr, rnID);
-  console.log('File: ', fileName, 'JSON: ', theJSONobj);
+  console.log('One JSON file: ', fileName, 'JSON: ', theJSONobj);
 }
 
 
@@ -673,7 +679,7 @@ function uploadJSON(jsonString, fileName) {
   var req = new XMLHttpRequest();
   var blob = new Blob([jsonString], {type: "application/json"});
   req.addEventListener('load', function(){
-    console.log(this.responseText, ' - ',  this.status);
+    console.log(`Writing ${fileName} succeeded. `, this.responseText, ' - ',  this.status);
     gId("sendSvgP").setAttribute("fill", greenColor);
     setTimeout(function(){ 
       gId("sendSvgP").setAttribute("fill", accentColor);
@@ -689,6 +695,7 @@ function uploadJSON(jsonString, fileName) {
   req.open("POST", "/upload");
   var formData = new FormData();
   formData.append("data", blob, fileName);
+  console.log(`Writing ${fileName} to device` );
   req.send(formData);
   return false;
 }
@@ -698,10 +705,10 @@ function uploadBitArray(result, stpAr, rnID){
   result.forEach(function(arr) {
     const req = new XMLHttpRequest();
     const blob = new Blob([new Uint8Array(arr[1])], {type: 'application/octet-stream'});
-    fileName = `/fl_${rnID}_c${arr[0]}.bin`.
- 
+    fileName = `/fl_${rnID}_c${arr[0]}.bin`;
+    req.fileName = fileName;
     req.addEventListener('load', function(){
-      console.log(this.responseText, ' - ',  this.status);
+      console.log(`Writing ${this.fileName} succeeded. `, this.responseText, ' - ',  this.status);
       gId("sendSvgP").setAttribute("fill", greenColor);
       setTimeout(function(){ 
         gId("sendSvgP").setAttribute("fill", accentColor);
@@ -714,12 +721,53 @@ function uploadBitArray(result, stpAr, rnID){
         gId("sendSvgP").setAttribute("fill", accentColor);
       }, 2000);
     });
-  
+    console.log(`Writing ${fileName} to device` );
     req.open("POST", "/upload");
     var formData = new FormData();
     formData.append("data", blob, fileName);
     req.send(formData);
   });
+  //Upload stepFiles
+  // JSON
+  let stpJSONobj = {
+    "raw":true,
+    "on":true,
+    "n": rnID,
+    "created": new Date().toLocaleString().substring(0, 16).replace(',', '')  
+  };
+  stpAr.sort((a, b) => a.step - b.step);
+  const commandIds = stpAr.map(obj => obj.commandId);
+  const durations = stpAr.map(obj => parseInt(obj.duration));
+  const trns = new Array(commandIds.length).fill(0);
+  stpJSONobj["ps"] = commandIds;
+  stpJSONobj["dur"] = durations;
+  stpJSONobj["transition"] = trns;
+  console.log("JSON playlist style: ", stpJSONobj);
+  let stpfileName = `/fl_${rnID}stp.json`;
+  var reqstpJ = new XMLHttpRequest();
+  reqstpJ.addEventListener('load', function(){
+    console.log(`Writing ${stpfileName} succeeded. `, this.responseText, ' - ',  this.status);
+    gId("sendSvgP").setAttribute("fill", greenColor);
+    setTimeout(function(){ 
+      gId("sendSvgP").setAttribute("fill", accentColor);
+    }, 1000);
+  });
+  reqstpJ.addEventListener('error', function(e){
+    console.log('Error: ', e); console.log(' Status: ', this.status);
+    gId("sendSvgP").setAttribute("fill", greenColor);
+    setTimeout(function(){ 
+      gId("sendSvgP").setAttribute("fill", accentColor);
+    }, 2000);
+  });
+  var blobJ = new Blob([JSON.stringify(stpJSONobj)], {type: "application/json"});
+  reqstpJ.open("POST", "/upload");
+  var formDatastpJ = new FormData();
+  formDatastpJ.append("data", blobJ, stpfileName);
+  console.log(`Writing ${stpfileName} to device` );
+  reqstpJ.send(formDatastpJ);
+  //bin
+
+  
   return false;
 }
 
@@ -751,6 +799,10 @@ gId("rnTD").style.display = 'none'
 gId("loadImgSVG1").addEventListener("click", setStpImg);
 gId("addRowSVG1").addEventListener("click", addStpImg);
 gId("delRowSVG1").addEventListener("click", delStpImg);
+gId("sndRnDiv").addEventListener("click", sendAnim);
+gId("prwRnDiv").addEventListener('click', anim);
+//gId("repRnDiv").removeEventListener('click', setRep);
+//gId("repRnDiv").addEventListener('click', setRep);
 
 //After everything is loaded, check if we have a possible IP/host
 

@@ -52,7 +52,7 @@ var redColor = '#6b050c';
 var scaleToggleOffd = "M17,7H7A5,5 0 0,0 2,12A5,5 0 0,0 7,17H17A5,5 0 0,0 22,12A5,5 0 0,0 17,7M7,15A3,3 0 0,1 4,12A3,3 0 0,1 7,9A3,3 0 0,1 10,12A3,3 0 0,1 7,15Z";
 var scaleToggleOnd = "M17,7H7A5,5 0 0,0 2,12A5,5 0 0,0 7,17H17A5,5 0 0,0 22,12A5,5 0 0,0 17,7M17,15A3,3 0 0,1 14,12A3,3 0 0,1 17,9A3,3 0 0,1 20,12A3,3 0 0,1 17,15Z";
 
-var repSVG = '<svg id="repSVG" style="width:36px;height:36px;cursor:pointer" viewBox="0 0 24 24"><path id="repPath" fill="#444" d="M17,17H7V14L3,18L7,22V19H19V13H17M7,7H17V10L21,6L17,2V5H5V11H7V7Z"/></svg>'
+var repSVG = '<svg id="repSVG" style="width:36px;height:36px;cursor:pointer" viewBox="0 0 24 24"><path id="repPath" fill="#44444" d="M17,17H7V14L3,18L7,22V19H19V13H17M7,7H17V10L21,6L17,2V5H5V11H7V7Z"/></svg>'
 var playSVG = '<svg id=playSVG style="width:36px;height:36px;cursor:pointer" viewBox="0 0 24 24"><path fill="#eeeeee" d="M8,5.14V19.14L19,12.14L8,5.14Z"/></svg>'
 var stopSVGPath = '<path id="stopSVGPath" fill="#eee" d="M18,18H6V6H18V18Z"/>'
 var playSVGPath = '<path id="playSVGPath" fill="#eee" d="M8,5.14V19.14L19,12.14L8,5.14Z"/>'
