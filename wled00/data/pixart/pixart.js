@@ -639,9 +639,9 @@ async function sendAnim(e) {
   });
   theJSONobj["steps"] = stpAr;
   const fileName = `/flow_${rnID}.json`;
-  uploadJSON(JSON.stringify(theJSONobj), fileName);
-  uploadBitArray(result, stpAr, rnID);
-  console.log('One JSON file: ', fileName, 'JSON: ', theJSONobj);
+  uploadAnimation(result, stpAr, rnID);
+  //uploadJSON(JSON.stringify(theJSONobj), fileName);
+  //uploadBitArray(result, stpAr, rnID);
 }
 
 
@@ -674,7 +674,8 @@ async function setImg(i) {
     }, 200);
   });
 }
-  
+
+/*
 function uploadJSON(jsonString, fileName) {
   var req = new XMLHttpRequest();
   var blob = new Blob([jsonString], {type: "application/json"});
@@ -699,9 +700,154 @@ function uploadJSON(jsonString, fileName) {
   req.send(formData);
   return false;
 }
+*/
 
+
+
+
+function uploadAnimation(result, stpAr, rnID){
+
+  // Reworked functionality to better match WLED (SetPixel format and so on...)
+  // Please read documentation on bit/byte usage in the resulting .bin file on the device
+  // We should create one file with all the changes for each frame
+  // First frame, should have index 0
+  // If repeat is on, last frame should have index 255 and have the changes needed to display frameIndex 0
+
+  stpAr.sort((a, b) => a.step - b.step);
+  var commandArray = result.map(function(innerArr) {
+    return [innerArr[0], innerArr[1]];
+  });
+  //Go through each step and generate all pixel values that needs to change from the previous frame
+  let lastFrameArray = [];
+  let framesArray = [];
+  let firstFrameArray = [];
+  let durationArray = [];
+  stpAr.forEach(function (thisStep, index){
+    durationArray.push([index, parseInt(thisStep.duration)]);
+    const thisCommand = commandArray.find(row => row[0] === thisStep.commandId)[1];
+    let changesArray = [];
+    if(index == 0){
+      //This is the first command row
+      for (let i = 0; i < thisCommand.length; i += 3) {
+        //In this array index = the frameID (first byte), i = the pixel index (byte 2 and 3), then comes the RGB values
+        //First time all pixels are set
+        changesArray.push([index, i/3, thisCommand[i], thisCommand[i+1], thisCommand[i+2]])
+      };
+      firstFrameArray = changesArray.slice(); //Save the first frame so we can reuse for comparison for repeat (i.e. frame id 255)
+      lastFrameArray = changesArray.slice(); //Save the first frame so we can reuse for comparison for next frame (i.e. frame id 0)
+    } else { 
+      //All rows exept the first
+      let thisFrameArray = [];
+      for (let i = 0; i < thisCommand.length; i += 3) {
+        thisFrameArray.push([index, i/3, thisCommand[i], thisCommand[i+1], thisCommand[i+2]]);
+        let thisPixelLastFrame = lastFrameArray[i/3]; //could also be done using a lookup on the pixelID (second index) but since we have ALL pixels of the last frame we can use the index
+        if(thisPixelLastFrame[2] != thisCommand[i] || thisPixelLastFrame[3] != thisCommand[i+1] || thisPixelLastFrame[4] != thisCommand[i+2]){
+          //only set this pixel to change if the color is different on this pixel compared to last frame
+          changesArray.push([index, i/3, thisCommand[i], thisCommand[i+1], thisCommand[i+2]])
+        }
+      }; 
+      lastFrameArray = thisFrameArray.slice(); //Save the first frame so we can reuse for comparison for next frame (i.e. frame id 1)
+    }
+    framesArray.push(...changesArray);
+  });
+
+  //Set up diffs for last to first as step 255 if repeat
+  if(isRep == 1){
+    let changesArray = [];
+    firstFrameArray.forEach(function (thisPixel, index){
+      let thisPixelLastFrame = lastFrameArray[index];
+      if(thisPixelLastFrame[2] != thisPixel[2] || thisPixelLastFrame[3] != thisPixel[3] || thisPixelLastFrame[4] != thisPixel[4]){
+        //only set this pixel to change if the color is different on this pixel compared to last frame
+        changesArray.push([255, index, thisPixel[2], thisPixel[3], thisPixel[4]]);
+      }
+    }); 
+    framesArray.push(...changesArray);
+  }
+  //This is where we probably should make code that identifies entire steps that are now still identical (like with the packman ghost that can have several frames back and forth) where we could remove the change infor from all but the first change and then reffer to the first in a lookup.
+  //But that is for another day
+
+  //Create Uint8Arrays
+  let framesSeqArray = [];
+  framesArray.forEach(function(item, index){
+    //Convert the 16bit pixel position value to 2 8bit values so we can write to the file easily
+    const bit16num = item[1];
+    const highByte = (bit16num >> 8) & 0xff; // Extract high byte
+    const lowByte = bit16num & 0xff; // Extract low byte
+    
+    /* bit explanation
+      00-03: Frame index Maximum of 255 frames allowed, last fram index reserved for "repeat" frame
+      04-11: PixelIndex. Maximum of 65535 pixels adressable (LOL, should be plenty ;)
+      12-15: Red value
+      16-19: Green value
+      20-23: Blue value
+      White value not implemented. Will be handled on the device for now.
+    */
+    framesSeqArray.push(item[0], highByte, lowByte, item[2], item[3], item[4]);
+  });
+
+  let durationSeqArray = [];
+  durationArray.forEach(function(item, index){
+    //Convert the 16bit pixel position value to 2 8bit values so we can write to the file easily
+    const bit16num = item[1];
+    const highByte = (bit16num >> 8) & 0xff; // Extract high byte
+    const lowByte = bit16num & 0xff; // Extract low byte
+    
+    /* bit explanation
+      00-03: Frame index Maximum of 255 frames allowed, last fram index reserved for "repeat" frame
+      04-11: Duration in 1/100 second. Maximum of 655.35 seconds which is almost 11 minutes (LOL, should be plenty ;)
+    */
+    durationSeqArray.push(item[0], highByte, lowByte);
+  });
+
+  //Writing Files
+  const reqFrames = new XMLHttpRequest();
+  const blobFrames = new Blob([new Uint8Array(framesSeqArray)], {type: 'application/octet-stream'});
+  fileName = `/anim_${rnID}.frm`; 
+  reqFrames.fileName = fileName;
+  console.log(`Writing ${fileName} to device` );
+  addListenerToHTTP(reqFrames, fileName);
+  reqFrames.open("POST", "/upload");
+  var formDataFrames = new FormData();
+  formDataFrames.append("data", blobFrames, fileName);
+  reqFrames.send(formDataFrames);
+
+  const reqDur = new XMLHttpRequest();
+  const blobDur = new Blob([new Uint8Array(durationSeqArray)], {type: 'application/octet-stream'});
+  fileName = `/anim_${rnID}.stp`; 
+  reqDur.fileName = fileName;
+  console.log(`Writing ${fileName} to device` );
+  addListenerToHTTP(reqDur, fileName);
+  reqDur.open("POST", "/upload");
+  var formDataDur = new FormData();
+  formDataDur.append("data", blobDur, fileName);
+  reqDur.send(formDataDur);
+
+  return false;
+}
+
+function addListenerToHTTP(req, filename){
+  //Cut this out to make the generatoin code more readble
+  req.addEventListener('load', function(){
+    console.log(`Writing ${filename} succeeded. `, this.responseText, ' - ',  this.status);
+    gId("sendSvgP").setAttribute("fill", greenColor);
+    setTimeout(function(){ 
+      gId("sendSvgP").setAttribute("fill", accentColor);
+    }, 1000);
+  });
+  req.addEventListener('error', function(e){
+    console.log('Error: ', e); console.log(' Status: ', this.status);
+    gId("sendSvgP").setAttribute("fill", greenColor);
+    setTimeout(function(){ 
+      gId("sendSvgP").setAttribute("fill", accentColor);
+    }, 2000);
+  });
+}
+/*
 function uploadBitArray(result, stpAr, rnID){
 
+  // We should create one file with all the changes for each frame
+  //First frame, should have index 0
+  //If repeat is on, last frame should have index 255 and have the changes needed to display frameIndex 0
   result.forEach(function(arr) {
     const req = new XMLHttpRequest();
     const blob = new Blob([new Uint8Array(arr[1])], {type: 'application/octet-stream'});
@@ -766,11 +912,9 @@ function uploadBitArray(result, stpAr, rnID){
   console.log(`Writing ${stpfileName} to device` );
   reqstpJ.send(formDatastpJ);
   //bin
-
-  
   return false;
 }
-
+*/
 
 var segmentData = generateSegmentArray(10);
 
