@@ -160,6 +160,43 @@ async function postPixels() {
   }
 }
 
+//This is the code/call we should make to start the animation (or script later)
+async function postAnim(scriptID) {
+  let ss = gId("sendSvgP");
+  ss.setAttribute("fill", prsCol);
+  let er = false;
+  let test = [`{"pixart":{"anim": "${scriptID}"}}`];
+  console.log(test);
+  for (let i of test) {
+    try {
+      const response = await fetch('http://'+gId('curlUrl').value+'/json/state', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: i
+      });
+      const data = await response.json();
+    } catch (error) {
+      console.error(error);
+      er = true;
+    }
+  }
+  if(er){
+    //Something went wrong
+    ss.setAttribute("fill", redColor);
+    setTimeout(function(){ 
+      ss.setAttribute("fill", accentTextColor);
+    }, 1000);
+  } else {
+    // A, OK
+    ss.setAttribute("fill", greenColor);
+    setTimeout(function(){ 
+      ss.setAttribute("fill", accentColor);
+    }, 1000);
+  }
+}
+
 //File uploader code
 const dropZone = gId('drop-zone');
 const filePicker = gId('file-picker');
@@ -802,7 +839,7 @@ function uploadAnimation(result, stpAr, rnID){
   //Writing Files
   const reqFrames = new XMLHttpRequest();
   const blobFrames = new Blob([new Uint8Array(framesSeqArray)], {type: 'application/octet-stream'});
-  fileName = `/anim_${rnID}.frm`; 
+  fileName = `/${rnID}.frm`; 
   reqFrames.fileName = fileName;
   console.log(`Writing ${fileName} to device` );
   addListenerToHTTP(reqFrames, fileName);
@@ -813,7 +850,7 @@ function uploadAnimation(result, stpAr, rnID){
 
   const reqDur = new XMLHttpRequest();
   const blobDur = new Blob([new Uint8Array(durationSeqArray)], {type: 'application/octet-stream'});
-  fileName = `/anim_${rnID}.stp`; 
+  fileName = `/${rnID}.ani`; 
   reqDur.fileName = fileName;
   console.log(`Writing ${fileName} to device` );
   addListenerToHTTP(reqDur, fileName);

@@ -1,8 +1,10 @@
-#include <SD.h>  // include the SD library, remove!
+//#include <SD.h>  // include the SD library, remove!
 
 #pragma once
 
 #include "wled.h"
+#include <FS.h>
+#include <string>
 
 /*
  * Usermods allow you to add own functionality to WLED more easily
@@ -23,18 +25,25 @@
  */
 
 //class name. Use something descriptive and leave the ": public Usermod" part :)
-class PixelArtRunner : public Usermod {
+class PixelArtHelper : public Usermod {
 
   private:
 
     // Private class members. You can declare variables and functions only accessible to your usermod here
     
-    bool enabled = false;
+    bool enabled = true; //Do I need to set to true, really?
     bool initDone = false;
     unsigned long lastTime = 0;
 
     unsigned long currentDuration = 1000; 
-    String currFlow = ""; //This holds the current flow, If empty, no flow is active. When "stop" command is recived this will be cleared to ""
+    String currAnim = ""; //This holds the current flow, If empty, no flow is active. When "stop" command is recived this will be cleared to ""
+    String currScript = ""; //This is not yet implemented but should hold a list of animations and the duration of each, basically an animation of animations (to save space)
+    String curDirList = ""; //commasepparated list of the available .ani files
+
+    String animationFileEnd = ".ani"; // Should be .ani
+    String framesFileEnd = ".frm";
+    String scriptFileEnd = ".scr";
+
 
     // set your config variables to their boot default value (this can also be done in readFromConfig() or a constructor if you prefer)
     //bool testBool = false;
@@ -45,8 +54,16 @@ class PixelArtRunner : public Usermod {
     //Set the default sleep time to one second, This should be read from config, would be nice
     //Not even sure this should be set like this at all. Depends on what we can do with JSON API
     unsigned long defaultDuration = 1000;
-    bool inMemCommands = true; //Load the command into ram on first call (on command)
+    bool inMemCommands = true; //Load the command into ram on first call (on command), only true implemented for now. With a different file read logic, each kommand should be possible to read at runtime, if necessary
     
+    //These are the main variables, holding the amination data in mem.
+    uint8_t* fileContentFrm;
+    size_t fileSizeFrm;
+    uint8_t* fileContentAni;
+    size_t fileSizeAni;
+    uint32_t nextFrameFileIndex = 0;
+    uint32_t firstFrameFileIndex = 0; //The first position holdning a non 0 frame data, when we loop we want to go to the second frame since frame 255 holds the data of setting upp like frame 0
+    uint16_t nextAnimationFileIndex = 0;
 
     // These config variables have defaults set inside readFromConfig()
     //Should be explored
@@ -104,6 +121,7 @@ class PixelArtRunner : public Usermod {
       // do your set-up here
       //Serial.println("Hello from my usermod!");
       currentDuration = defaultDuration;
+      //Serial.begin(9600);
       initDone = true;
     }
 
@@ -131,43 +149,160 @@ class PixelArtRunner : public Usermod {
       // if usermod is disabled or called during strip updating just exit
       // NOTE: on very long strips strip.isUpdating() may always return true so update accordingly
       if (!enabled || strip.isUpdating()) return;
-
+      //Test
+      if(millis() - lastTime > 2000){        
+            lastTime = millis(); 
+            //Let's do some magic here when called for
+      };
       // do your magic here
       //Sleep for the duration set by the flow step, or if no flow is active, default
-      if (currFlow != ""){ //Don't do anything if no flow is active, not sure how that will work with the activation through JSON, but we'll see
+      if (currAnim != ""){ //Don't do anything if no flow is active, not sure how that will work with the activation through JSON, but we'll see
+
         if (millis() - lastTime > currentDuration) {        
-            lastTime = millis(); // FIRST set this so that to keep timing as close to desired duratoin regardless of lag in later code
+            lastTime = millis(); // FIRST set this so that to keep timing as close to desired duration regardless of lag in later code
 
-            //Check the next step
-            
-            //Load next command into newArray
 
-            // Go through the newArray, 3 steps at a time and set pixel.
-            // Since each pixel is set individually we can compare the current state of the pixel (oldArray) with the new value and only set if different
+            //Check if the files are loaded into mem
+            if(fileSizeAni < 1){
+            //If not
+                // Load them and set step to 0 or 255 (depending on logic) to set that the next frame need to load the first image, or load the first image.
+                Serial.println("Loading .frm file");
+                WLED_FS.begin(); //Not sure I need this
+                File fileFrm = WLED_FS.open("/" + currAnim + ".frm");
+                size_t fileSizeFrm = fileFrm.size(); // Get the size of the file
+                fileContentFrm = new uint8_t[fileSizeFrm]; // Create an array to store the file content
+                size_t bytesRead = fileFrm.read(fileContentFrm, fileSizeFrm); // Read the file into the array
+                // Check if the file was read successfully
+                if (bytesRead != fileSizeAni) {
+                    Serial.println("Failed to read .frm file.");
+                    return;
+                }
+                // Close the file
+                fileFrm.close();
+                Serial.println("Frames file loaded into memory. Size of file " + fileSizeAni);
 
-            //Set currentDuration from Step Array
-            //Set oldArray = newArray
-            //Set newArray = []
+                Serial.println("Loading .ani file");
+                //WLED_FS.begin(); //Not sure I need this
+                File fileAni = WLED_FS.open("/" + currAnim + ".ani");
+                size_t fileSizeAni = fileAni.size(); // Get the size of the file
+                fileContentAni = new uint8_t[fileSizeAni]; // Create an array to store the file content
+                bytesRead = fileAni.read(fileContentAni, fileSizeAni); // Read the file into the array
+                // Check if the file was read successfully
+                if (bytesRead != fileSizeAni) {
+                    Serial.println("Failed to read .ani file.");
+                    return;
+                }
+                // Close the file
+                fileAni.close();
+                Serial.println("Animation file loaded into memory. Size of file " + fileSizeAni);
+
+                
+                //Set curentDuration from index 0
+                uint8_t frameIndex = fileContentAni[0]; //Should be 0 unless something is wrong
+                currentDuration = ((fileContentAni[1] << 8) | fileContentAni[2])*10; //Duration in 1/100th of a second * 10 for milliseconds
+
+                //This frame is always complete. Sets all leds
+                uint8_t thisFrame = 0;
+                int len = sizeof(fileContentFrm) / sizeof(fileContentFrm[0]);
+                for (int i = 0; i < len; i += 5) { //While the first byte is 0, we are on the first frame
+                    uint8_t thisPixelFrame = fileContentFrm[i]; //Read the first byte into a 8bit int representing the frame
+                    if (thisPixelFrame == thisFrame){ //We are still draving the same frame
+                      uint16_t pixelPosition = (fileContentFrm[i+1] << 8) | fileContentFrm[i+2];// read bytes 2 and 3 into a 16-bit integer representing the pixelPosition
+                      uint8_t RedValue = fileContentFrm[i+3];// extract the next three bytes as 8-bit integers
+                      uint8_t GreenValue = fileContentFrm[i+4];
+                      uint8_t BlueValue = fileContentFrm[i+5];
+
+                      // call strip.setPixelColor() function with the extracted values
+                      strip.setPixelColor(pixelPosition, RedValue, GreenValue, BlueValue, 0);//White led value in RGBW appears not used.
+                      Serial.println(pixelPosition);
+                      Serial.println(RedValue);
+                      Serial.println(GreenValue);
+                      Serial.println(BlueValue);
+
+                    } else {
+                      firstFrameFileIndex = i; //This is the index we want to start looping from when we go back from 255, so we don't have to read through the entire first frame again
+                      nextFrameFileIndex = i; //This is the next frames first byte
+                      break; //Drawing, first frame done
+                    }
+                }
+                lastTime = millis();//On load restart the timer after this step i done to preserve duration of first frame, first time
+            } else{
+              //Files are loaded into memory 
+              //First image is drawn and we're just looping along 
+              lastTime = millis();//Start the timer directly to ensure timing precision over "show time", i.e. duration is time between start and next start, no matter the drawing time
+              nextAnimationFileIndex += 3;
+              uint8_t thisFrame = fileContentAni[nextAnimationFileIndex]; //There COULD be frames with no changes, i,e, no frames to change. So step throug all frames by ID
+              currentDuration = ((fileContentAni[nextAnimationFileIndex+1] << 8) | fileContentAni[nextAnimationFileIndex+2])*10; //Duration in 1/100th of a second * 10 for milliseconds
+
+              int len = sizeof(fileContentFrm) / sizeof(fileContentFrm[0]);
+              for (int i = nextFrameFileIndex; i < len; i += 5) { //Start reading from the index we identified as the first frame of the next fram, when drawing the last frame
+                  uint8_t thisPixelFrame = fileContentFrm[i]; //Read the first byte into a 8bit int representing the frame
+                  if (thisPixelFrame == thisFrame){ //We are still draving the same frame
+                    uint16_t pixelPosition = (fileContentFrm[i+1] << 8) | fileContentFrm[i+2];// read bytes 2 and 3 into a 16-bit integer representing the pixelPosition
+                    uint8_t RedValue = fileContentFrm[i+3];// extract the next three bytes as 8-bit integers
+                    uint8_t GreenValue = fileContentFrm[i+4];
+                    uint8_t BlueValue = fileContentFrm[i+5];
+
+                    // call strip.setPixelColor() function with the extracted values
+                    strip.setPixelColor(pixelPosition, RedValue, GreenValue, BlueValue, 0);//White led value in RGBW appears not used.
+                      Serial.println(pixelPosition);
+                      Serial.println(RedValue);
+                      Serial.println(GreenValue);
+                      Serial.println(BlueValue);
+
+                  } else {
+                      nextFrameFileIndex = i; //This is the next frames first byte
+                      break; //Drawing, first frame done
+                  }
+              }
+              //If we end up here, we have reached the end of the file, and we  must decide what to do now
+              if(thisFrame==255){
+                nextFrameFileIndex = firstFrameFileIndex; //Loop the animation. Frame 255 has set the image back to frame 0 so we start next round by chaging to frame 1
+              } else{
+                //Stop the animation
+                currAnim = "";
+                //Reset all variables
+                currentDuration = defaultDuration;
+                delete[] fileContentFrm;
+                delete[] fileContentAni;
+                nextFrameFileIndex = 0;
+                firstFrameFileIndex = 0;
+                nextAnimationFileIndex = 0;
+              }
+
+            }
         }
       }
     }
 
-    void readFile(){
-        File myFile;  // create a file object
-
-        const int arraySize = 100;  // set the size of your array
-        byte myArray[arraySize];   // create an array of bytes to hold your data
-
-        SD.begin(4);          // initialize the SD card
-        myFile = SD.open("/myfile.bin", FILE_READ);   // open the file in binary read mode
-        if (myFile) {         // if the file is open
-            myFile.read(myArray, arraySize);   // read the data into the array
-            myFile.close();     // close the file
+    void updateAnimationFileList() {
+      Serial.println("Updating List");
+      String retStr = "";
+      WLED_FS.begin();
+      File root = WLED_FS.open("/");
+      File file = root.openNextFile();
+      while (file) {
+        String fileName = file.name();
+        // Strip leading '/'
+        if (fileName.startsWith("/")) {
+          fileName = fileName.substring(1);
         }
-        else {                // if the file is not open
-            Serial.println("File not found");   // print an error message
-            //Some error thingie should be here
+        // Strip file extension
+        int extIndex = fileName.lastIndexOf('.');
+        if (extIndex != -1) {
+          String fileExt = fileName.substring(extIndex);
+          if (fileExt == animationFileEnd) {
+            fileName = fileName.substring(0, extIndex);
+            if (retStr.length() > 0) { //If this is not the first
+              retStr += ", ";
+            }
+            retStr += fileName;
+          }
         }
+        file = root.openNextFile();
+      }
+      curDirList = retStr;
+      Serial.println(retStr);
     }
 
     /*
@@ -178,21 +313,9 @@ class PixelArtRunner : public Usermod {
     void addToJsonInfo(JsonObject& root)
     {
       // if "u" object does not exist yet wee need to create it
-      JsonObject user = root["u"];
-      if (user.isNull()) user = root.createNestedObject("u");
-
-      //this code adds "u":{"ExampleUsermod":[20," lux"]} to the info object
-      //Should add currently running Flow Name (from JSON file)
-      //int reading = 20;
-      //JsonArray lightArr = user.createNestedArray(FPSTR(_name)); //name
-      //lightArr.add(reading); //value
-      //lightArr.add(F(" lux")); //unit
-      //if you are implementing a sensor usermod, you may publish sensor data
-      //JsonObject sensor = root[F("sensor")];
-      //if (sensor.isNull()) sensor = root.createNestedObject(F("sensor"));
-      //temp = sensor.createNestedArray(F("light"));
-      //temp.add(reading);
-      //temp.add(F("lux"));
+      JsonObject user = root[FPSTR(_name)];
+      if (user.isNull()) user = root.createNestedObject(FPSTR(_name));
+      user["Time loaded"].add(1000);
     }
 
 
@@ -202,12 +325,22 @@ class PixelArtRunner : public Usermod {
      */
     void addToJsonState(JsonObject& root)
     {
+
       if (!initDone || !enabled) return;  // prevent crash on boot applyPreset()
-
-      JsonObject usermod = root[FPSTR(_name)];
-      if (usermod.isNull()) usermod = root.createNestedObject(FPSTR(_name));
-
-      usermod["user0"] = userVar0;
+      
+      Serial.println("Adding to JSON");
+      updateAnimationFileList();
+      Serial.println("List updated");
+      JsonObject stateJson = root[FPSTR(_name)];
+      if (stateJson.isNull()) stateJson = root.createNestedObject(FPSTR(_name));
+      // this creates an array named Current and adds values to it:
+      //stateJson["ArrayValues"].add(1203);
+      //This creates a value with the label Current2
+      //stateJson["SingleValue"] = 1203;
+      stateJson["Load time debug"] = millis();
+      stateJson["anim"] = currAnim;
+      stateJson["script"] = currScript;
+      stateJson["files"] = curDirList;
     }
 
 
@@ -219,13 +352,13 @@ class PixelArtRunner : public Usermod {
     {
       if (!initDone) return;  // prevent crash on boot applyPreset()
 
-      JsonObject usermod = root[FPSTR(_name)];
-      if (!usermod.isNull()) {
+      JsonObject stateJson = root[FPSTR(_name)];
+      if (!stateJson.isNull()) {
         // expect JSON usermod data in usermod name object: {"ExampleUsermod:{"user0":10}"}
-        userVar0 = usermod["user0"] | userVar0; //if "user0" key exists in JSON, update, else keep old value
+         currAnim = stateJson["anim"] | currAnim; //if "anim" key exists in JSON, update, else keep old value
       }
       // you can as well check WLED state JSON keys
-      if (root["bri"] == 255) Serial.println(F("Don't burn down your garage!"));
+      //if (root["bri"] == 255) Serial.println(F("Don't burn down your garage!"));
     }
 
 
@@ -430,8 +563,8 @@ class PixelArtRunner : public Usermod {
 
 
 // add more strings here to reduce flash memory usage
-const char PixelArtRunner::_name[]    PROGMEM = "pixart";
-const char PixelArtRunner::_enabled[] PROGMEM = "enabled";
+const char PixelArtHelper::_name[]    PROGMEM = "pixart";
+const char PixelArtHelper::_enabled[] PROGMEM = "enabled";
 
 
 // implementation of non-inline member methods
