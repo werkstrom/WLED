@@ -4,7 +4,7 @@
 
 #include "wled.h"
 #include <FS.h>
-#include <string>
+
 
 /*
  * Usermods allow you to add own functionality to WLED more easily
@@ -31,7 +31,7 @@ class PixelArtHelper : public Usermod {
 
     // Private class members. You can declare variables and functions only accessible to your usermod here
     
-    bool enabled = true; //Do I need to set to true, really?
+    bool enabled = true; 
     bool initDone = false;
     unsigned long lastTime = 0;
 
@@ -53,7 +53,7 @@ class PixelArtHelper : public Usermod {
 
     //Set the default sleep time to one second, This should be read from config, would be nice
     //Not even sure this should be set like this at all. Depends on what we can do with JSON API
-    unsigned long defaultDuration = 1000;
+    unsigned long defaultDuration = 1;
     bool inMemCommands = true; //Load the command into ram on first call (on command), only true implemented for now. With a different file read logic, each kommand should be possible to read at runtime, if necessary
     
     //These are the main variables, holding the amination data in mem.
@@ -64,6 +64,8 @@ class PixelArtHelper : public Usermod {
     uint32_t nextFrameFileIndex = 0;
     uint32_t firstFrameFileIndex = 0; //The first position holdning a non 0 frame data, when we loop we want to go to the second frame since frame 255 holds the data of setting upp like frame 0
     uint16_t nextAnimationFileIndex = 0;
+    bool isLoaded = false;
+    
 
     // These config variables have defaults set inside readFromConfig()
     //Should be explored
@@ -150,42 +152,55 @@ class PixelArtHelper : public Usermod {
       // NOTE: on very long strips strip.isUpdating() may always return true so update accordingly
       if (!enabled || strip.isUpdating()) return;
       //Test
-      if(millis() - lastTime > 2000){        
-            lastTime = millis(); 
-            //Let's do some magic here when called for
-      };
       // do your magic here
       //Sleep for the duration set by the flow step, or if no flow is active, default
       if (currAnim != ""){ //Don't do anything if no flow is active, not sure how that will work with the activation through JSON, but we'll see
 
-        if (millis() - lastTime > currentDuration) {        
-            lastTime = millis(); // FIRST set this so that to keep timing as close to desired duration regardless of lag in later code
+        if (currAnim == "test" && millis() - lastTime > 1000) {
+          Serial.begin(115200);
 
+          Serial.println(strip.getPixelColor(9));
+          Serial.println("Test run");
+          SEGMENT.setPixelColor(9, RGBW32(255,0,0,0));
+          Serial.println("Color Set");
+          Serial.println(strip.getPixelColor(9));
+          
+          lastTime = millis();
+          currAnim = "";
+          return;
+          
+        }
 
+        if (millis() - lastTime > currentDuration) {   
+          Serial.begin(115200);
+            Serial.println("Entered the function" + millis());
+            lastTime = millis();
+            currentDuration = 20000;
             //Check if the files are loaded into mem
-            if(fileSizeAni < 1){
+            if(!isLoaded){
             //If not
                 // Load them and set step to 0 or 255 (depending on logic) to set that the next frame need to load the first image, or load the first image.
-                Serial.println("Loading .frm file");
-                WLED_FS.begin(); //Not sure I need this
-                File fileFrm = WLED_FS.open("/" + currAnim + ".frm");
+                isLoaded = true;
+                Serial.print("Loading .frm file");
+                File fileFrm = WLED_FS.open("/" + currAnim + ".frm", "r");
+                Serial.write( fileFrm.name());
                 size_t fileSizeFrm = fileFrm.size(); // Get the size of the file
-                fileContentFrm = new uint8_t[fileSizeFrm]; // Create an array to store the file content
+                uint8_t* fileContentFrm = new uint8_t[fileSizeFrm]; // Create an array to store the file content
                 size_t bytesRead = fileFrm.read(fileContentFrm, fileSizeFrm); // Read the file into the array
                 // Check if the file was read successfully
-                if (bytesRead != fileSizeAni) {
+                if (bytesRead != fileSizeFrm) {
                     Serial.println("Failed to read .frm file.");
                     return;
                 }
                 // Close the file
                 fileFrm.close();
-                Serial.println("Frames file loaded into memory. Size of file " + fileSizeAni);
+                Serial.println("Frames file loaded into memory. Size of file ");
+                Serial.println(sizeof(fileContentFrm));
 
                 Serial.println("Loading .ani file");
-                //WLED_FS.begin(); //Not sure I need this
-                File fileAni = WLED_FS.open("/" + currAnim + ".ani");
+                File fileAni = WLED_FS.open("/" + currAnim + ".ani", "r");
                 size_t fileSizeAni = fileAni.size(); // Get the size of the file
-                fileContentAni = new uint8_t[fileSizeAni]; // Create an array to store the file content
+                uint8_t* fileContentAni = new uint8_t[fileSizeAni]; // Create an array to store the file content
                 bytesRead = fileAni.read(fileContentAni, fileSizeAni); // Read the file into the array
                 // Check if the file was read successfully
                 if (bytesRead != fileSizeAni) {
@@ -194,17 +209,21 @@ class PixelArtHelper : public Usermod {
                 }
                 // Close the file
                 fileAni.close();
-                Serial.println("Animation file loaded into memory. Size of file " + fileSizeAni);
-
+                Serial.print("Animation file loaded into memory. Size of file ");
+                Serial.println(sizeof(*fileContentAni));
+                
                 
                 //Set curentDuration from index 0
-                uint8_t frameIndex = fileContentAni[0]; //Should be 0 unless something is wrong
-                currentDuration = ((fileContentAni[1] << 8) | fileContentAni[2])*10; //Duration in 1/100th of a second * 10 for milliseconds
+                //uint8_t frameIndex = fileContentAni[0]; //Should be 0 unless something is wrong
+                //currentDuration = ((fileContentAni[1] << 8) | fileContentAni[2])*10; //Duration in 1/100th of a second * 10 for milliseconds
 
                 //This frame is always complete. Sets all leds
                 uint8_t thisFrame = 0;
-                int len = sizeof(fileContentFrm) / sizeof(fileContentFrm[0]);
-                for (int i = 0; i < len; i += 5) { //While the first byte is 0, we are on the first frame
+                
+                Serial.print("Number of frames: ");
+                Serial.println(fileSizeFrm/6);
+
+                for (int i = 0; i < fileSizeFrm; i += 6) { //While the first byte is 0, we are on the first frame
                     uint8_t thisPixelFrame = fileContentFrm[i]; //Read the first byte into a 8bit int representing the frame
                     if (thisPixelFrame == thisFrame){ //We are still draving the same frame
                       uint16_t pixelPosition = (fileContentFrm[i+1] << 8) | fileContentFrm[i+2];// read bytes 2 and 3 into a 16-bit integer representing the pixelPosition
@@ -213,11 +232,8 @@ class PixelArtHelper : public Usermod {
                       uint8_t BlueValue = fileContentFrm[i+5];
 
                       // call strip.setPixelColor() function with the extracted values
-                      strip.setPixelColor(pixelPosition, RedValue, GreenValue, BlueValue, 0);//White led value in RGBW appears not used.
-                      Serial.println(pixelPosition);
-                      Serial.println(RedValue);
-                      Serial.println(GreenValue);
-                      Serial.println(BlueValue);
+                      //strip.setPixelColor(pixelPosition, RedValue, GreenValue, BlueValue, 0);//White led value in RGBW appears not used.
+                      strip.setPixelColor(pixelPosition, RGBW32(RedValue,GreenValue,BlueValue,0));
 
                     } else {
                       firstFrameFileIndex = i; //This is the index we want to start looping from when we go back from 255, so we don't have to read through the entire first frame again
@@ -225,7 +241,28 @@ class PixelArtHelper : public Usermod {
                       break; //Drawing, first frame done
                     }
                 }
+                Serial.print("Done with pixels of frame. Next pixel: ");
+                Serial.print(nextFrameFileIndex/6);
                 lastTime = millis();//On load restart the timer after this step i done to preserve duration of first frame, first time
+                currentDuration = (fileContentAni[1] << 8) | fileContentAni[2]; //Duration in 1/100th of a second * 10 for milliseconds
+                Serial.print("Current duration set to: ");
+                Serial.println(currentDuration);
+                currentDuration = currentDuration * 10;
+                Serial.print("Current duration set to: ");
+                Serial.println(currentDuration);
+
+                int stoptimer = millis();
+                while(millis() < stoptimer + 3000){
+                  //Wait
+                }
+                Serial.println("Done waiting");
+                
+                stoptimer = millis();
+                while(millis() < stoptimer + 3000){
+                  //Wait
+                }
+                Serial.println("Done waiting 2");
+                
             } else{
               //Files are loaded into memory 
               //First image is drawn and we're just looping along 
@@ -268,6 +305,7 @@ class PixelArtHelper : public Usermod {
                 nextFrameFileIndex = 0;
                 firstFrameFileIndex = 0;
                 nextAnimationFileIndex = 0;
+                isLoaded = false;
               }
 
             }
@@ -302,9 +340,9 @@ class PixelArtHelper : public Usermod {
         file = root.openNextFile();
       }
       curDirList = retStr;
-      Serial.println(retStr);
     }
 
+    
     /*
      * addToJsonInfo() can be used to add custom entries to the /json/info part of the JSON API.
      * Creating an "u" object allows you to add custom key/value pairs to the Info section of the WLED web UI.
@@ -463,13 +501,7 @@ class PixelArtHelper : public Usermod {
      * be careful not to add too much as oappend() buffer is limited to 3k
      */
     void appendConfigData()
-    {
-      //oappend(SET_F("addInfo('")); oappend(String(FPSTR(_name)).c_str()); oappend(SET_F(":great")); oappend(SET_F("',1,'<i>(this is a great config value)</i>');"));
-      //oappend(SET_F("addInfo('")); oappend(String(FPSTR(_name)).c_str()); oappend(SET_F(":testString")); oappend(SET_F("',1,'enter any string you want');"));
-      //oappend(SET_F("dd=addDropdown('")); oappend(String(FPSTR(_name)).c_str()); oappend(SET_F("','testInt');"));
-      //oappend(SET_F("addOption(dd,'Nothing',0);"));
-      //oappend(SET_F("addOption(dd,'Everything',42);"));
-    }
+    {}
 
 
     /*
@@ -480,6 +512,9 @@ class PixelArtHelper : public Usermod {
     void handleOverlayDraw()
     {
       //strip.setPixelColor(0, RGBW32(0,0,0,0)) // set the first pixel to black
+      strip.setPixelColor(0, RGBW32(0,255,0,0));
+      strip.setPixelColor(2, RGBW32(255,0,0,0));
+
     }
 
 
@@ -512,20 +547,6 @@ class PixelArtHelper : public Usermod {
      * topic only contains stripped topic (part after /wled/MAC)
      */
     bool onMqttMessage(char* topic, char* payload) {
-      // check if we received a command
-      //if (strlen(topic) == 8 && strncmp_P(topic, PSTR("/command"), 8) == 0) {
-      //  String action = payload;
-      //  if (action == "on") {
-      //    enabled = true;
-      //    return true;
-      //  } else if (action == "off") {
-      //    enabled = false;
-      //    return true;
-      //  } else if (action == "toggle") {
-      //    enabled = !enabled;
-      //    return true;
-      //  }
-      //}
       return false;
     }
 
@@ -533,8 +554,6 @@ class PixelArtHelper : public Usermod {
      * onMqttConnect() is called when MQTT connection is established
      */
     void onMqttConnect(bool sessionPresent) {
-      // do any MQTT related initialisation here
-      //publishMqtt("I am alive!");
     }
 #endif
 
@@ -554,7 +573,7 @@ class PixelArtHelper : public Usermod {
      */
     uint16_t getId()
     {
-      return USERMOD_ID_EXAMPLE;
+      return USERMOD_PIXART;
     }
 
    //More methods can be added in the future, this example will then be extended.
@@ -565,35 +584,3 @@ class PixelArtHelper : public Usermod {
 // add more strings here to reduce flash memory usage
 const char PixelArtHelper::_name[]    PROGMEM = "pixart";
 const char PixelArtHelper::_enabled[] PROGMEM = "enabled";
-
-
-// implementation of non-inline member methods
-
-//void PixelArtRunner::publishMqtt(const char* state, bool retain)
-//{
-//#ifndef WLED_DISABLE_MQTT
-//  //Check if MQTT Connected, otherwise it will crash the 8266
-//  if (WLED_MQTT_CONNECTED) {
-//    char subuf[64];
-//    strcpy(subuf, mqttDeviceTopic);
-//    strcat_P(subuf, PSTR("/example"));
-//    mqtt->publish(subuf, 0, retain, state);
-//  }
-//#endif
-//}
-/*
-Footer
-© 2023 GitHub, Inc.
-Footer navigation
-Terms
-Privacy
-Security
-Status
-Docs
-Contact GitHub
-Pricing
-API
-Training
-Blog
-About
-*/
