@@ -4,6 +4,9 @@
 
 #include "wled.h"
 #include <FS.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
 
 
 /*
@@ -53,18 +56,20 @@ class PixelArtHelper : public Usermod {
 
     //Set the default sleep time to one second, This should be read from config, would be nice
     //Not even sure this should be set like this at all. Depends on what we can do with JSON API
-    unsigned long defaultDuration = 1;
+    unsigned long defaultDuration = 1000;
     bool inMemCommands = true; //Load the command into ram on first call (on command), only true implemented for now. With a different file read logic, each kommand should be possible to read at runtime, if necessary
     
     //These are the main variables, holding the amination data in mem.
     uint8_t* fileContentFrm;
     size_t fileSizeFrm;
     uint8_t* fileContentAni;
-    size_t fileSizeAni;
+    size_t fileSizeAni = 0;
     uint32_t nextFrameFileIndex = 0;
     uint32_t firstFrameFileIndex = 0; //The first position holdning a non 0 frame data, when we loop we want to go to the second frame since frame 255 holds the data of setting upp like frame 0
     uint16_t nextAnimationFileIndex = 0;
     bool isLoaded = false;
+    size_t FRMfilesize;
+    size_t ANIfilesize;
     
 
     // These config variables have defaults set inside readFromConfig()
@@ -123,7 +128,7 @@ class PixelArtHelper : public Usermod {
       // do your set-up here
       //Serial.println("Hello from my usermod!");
       currentDuration = defaultDuration;
-      //Serial.begin(9600);
+      Serial.begin(115200);
       initDone = true;
     }
 
@@ -150,174 +155,18 @@ class PixelArtHelper : public Usermod {
     void loop() {
       // if usermod is disabled or called during strip updating just exit
       // NOTE: on very long strips strip.isUpdating() may always return true so update accordingly
-      if (!enabled || strip.isUpdating()) return;
-      //Test
+      if (!enabled || strip.isUpdating()) {
+        return;
+      }
       // do your magic here
       //Sleep for the duration set by the flow step, or if no flow is active, default
-      if (currAnim != ""){ //Don't do anything if no flow is active, not sure how that will work with the activation through JSON, but we'll see
-
-        if (currAnim == "test" && millis() - lastTime > 1000) {
-          Serial.begin(115200);
-
-          Serial.println(strip.getPixelColor(9));
-          Serial.println("Test run");
-          SEGMENT.setPixelColor(9, RGBW32(255,0,0,0));
-          Serial.println("Color Set");
-          Serial.println(strip.getPixelColor(9));
-          
-          lastTime = millis();
-          currAnim = "";
-          return;
-          
-        }
-
-        if (millis() - lastTime > currentDuration) {   
-          Serial.begin(115200);
-            Serial.println("Entered the function" + millis());
-            lastTime = millis();
-            currentDuration = 20000;
-            //Check if the files are loaded into mem
-            if(!isLoaded){
-            //If not
-                // Load them and set step to 0 or 255 (depending on logic) to set that the next frame need to load the first image, or load the first image.
-                isLoaded = true;
-                Serial.print("Loading .frm file");
-                File fileFrm = WLED_FS.open("/" + currAnim + ".frm", "r");
-                Serial.write( fileFrm.name());
-                size_t fileSizeFrm = fileFrm.size(); // Get the size of the file
-                uint8_t* fileContentFrm = new uint8_t[fileSizeFrm]; // Create an array to store the file content
-                size_t bytesRead = fileFrm.read(fileContentFrm, fileSizeFrm); // Read the file into the array
-                // Check if the file was read successfully
-                if (bytesRead != fileSizeFrm) {
-                    Serial.println("Failed to read .frm file.");
-                    return;
-                }
-                // Close the file
-                fileFrm.close();
-                Serial.println("Frames file loaded into memory. Size of file ");
-                Serial.println(sizeof(fileContentFrm));
-
-                Serial.println("Loading .ani file");
-                File fileAni = WLED_FS.open("/" + currAnim + ".ani", "r");
-                size_t fileSizeAni = fileAni.size(); // Get the size of the file
-                uint8_t* fileContentAni = new uint8_t[fileSizeAni]; // Create an array to store the file content
-                bytesRead = fileAni.read(fileContentAni, fileSizeAni); // Read the file into the array
-                // Check if the file was read successfully
-                if (bytesRead != fileSizeAni) {
-                    Serial.println("Failed to read .ani file.");
-                    return;
-                }
-                // Close the file
-                fileAni.close();
-                Serial.print("Animation file loaded into memory. Size of file ");
-                Serial.println(sizeof(*fileContentAni));
-                
-                
-                //Set curentDuration from index 0
-                //uint8_t frameIndex = fileContentAni[0]; //Should be 0 unless something is wrong
-                //currentDuration = ((fileContentAni[1] << 8) | fileContentAni[2])*10; //Duration in 1/100th of a second * 10 for milliseconds
-
-                //This frame is always complete. Sets all leds
-                uint8_t thisFrame = 0;
-                
-                Serial.print("Number of frames: ");
-                Serial.println(fileSizeFrm/6);
-
-                for (int i = 0; i < fileSizeFrm; i += 6) { //While the first byte is 0, we are on the first frame
-                    uint8_t thisPixelFrame = fileContentFrm[i]; //Read the first byte into a 8bit int representing the frame
-                    if (thisPixelFrame == thisFrame){ //We are still draving the same frame
-                      uint16_t pixelPosition = (fileContentFrm[i+1] << 8) | fileContentFrm[i+2];// read bytes 2 and 3 into a 16-bit integer representing the pixelPosition
-                      uint8_t RedValue = fileContentFrm[i+3];// extract the next three bytes as 8-bit integers
-                      uint8_t GreenValue = fileContentFrm[i+4];
-                      uint8_t BlueValue = fileContentFrm[i+5];
-
-                      // call strip.setPixelColor() function with the extracted values
-                      //strip.setPixelColor(pixelPosition, RedValue, GreenValue, BlueValue, 0);//White led value in RGBW appears not used.
-                      strip.setPixelColor(pixelPosition, RGBW32(RedValue,GreenValue,BlueValue,0));
-
-                    } else {
-                      firstFrameFileIndex = i; //This is the index we want to start looping from when we go back from 255, so we don't have to read through the entire first frame again
-                      nextFrameFileIndex = i; //This is the next frames first byte
-                      break; //Drawing, first frame done
-                    }
-                }
-                Serial.print("Done with pixels of frame. Next pixel: ");
-                Serial.print(nextFrameFileIndex/6);
-                lastTime = millis();//On load restart the timer after this step i done to preserve duration of first frame, first time
-                currentDuration = (fileContentAni[1] << 8) | fileContentAni[2]; //Duration in 1/100th of a second * 10 for milliseconds
-                Serial.print("Current duration set to: ");
-                Serial.println(currentDuration);
-                currentDuration = currentDuration * 10;
-                Serial.print("Current duration set to: ");
-                Serial.println(currentDuration);
-
-                int stoptimer = millis();
-                while(millis() < stoptimer + 3000){
-                  //Wait
-                }
-                Serial.println("Done waiting");
-                
-                stoptimer = millis();
-                while(millis() < stoptimer + 3000){
-                  //Wait
-                }
-                Serial.println("Done waiting 2");
-                
-            } else{
-              //Files are loaded into memory 
-              //First image is drawn and we're just looping along 
-              lastTime = millis();//Start the timer directly to ensure timing precision over "show time", i.e. duration is time between start and next start, no matter the drawing time
-              nextAnimationFileIndex += 3;
-              uint8_t thisFrame = fileContentAni[nextAnimationFileIndex]; //There COULD be frames with no changes, i,e, no frames to change. So step throug all frames by ID
-              currentDuration = ((fileContentAni[nextAnimationFileIndex+1] << 8) | fileContentAni[nextAnimationFileIndex+2])*10; //Duration in 1/100th of a second * 10 for milliseconds
-
-              int len = sizeof(fileContentFrm) / sizeof(fileContentFrm[0]);
-              for (int i = nextFrameFileIndex; i < len; i += 5) { //Start reading from the index we identified as the first frame of the next fram, when drawing the last frame
-                  uint8_t thisPixelFrame = fileContentFrm[i]; //Read the first byte into a 8bit int representing the frame
-                  if (thisPixelFrame == thisFrame){ //We are still draving the same frame
-                    uint16_t pixelPosition = (fileContentFrm[i+1] << 8) | fileContentFrm[i+2];// read bytes 2 and 3 into a 16-bit integer representing the pixelPosition
-                    uint8_t RedValue = fileContentFrm[i+3];// extract the next three bytes as 8-bit integers
-                    uint8_t GreenValue = fileContentFrm[i+4];
-                    uint8_t BlueValue = fileContentFrm[i+5];
-
-                    // call strip.setPixelColor() function with the extracted values
-                    strip.setPixelColor(pixelPosition, RedValue, GreenValue, BlueValue, 0);//White led value in RGBW appears not used.
-                      Serial.println(pixelPosition);
-                      Serial.println(RedValue);
-                      Serial.println(GreenValue);
-                      Serial.println(BlueValue);
-
-                  } else {
-                      nextFrameFileIndex = i; //This is the next frames first byte
-                      break; //Drawing, first frame done
-                  }
-              }
-              //If we end up here, we have reached the end of the file, and we  must decide what to do now
-              if(thisFrame==255){
-                nextFrameFileIndex = firstFrameFileIndex; //Loop the animation. Frame 255 has set the image back to frame 0 so we start next round by chaging to frame 1
-              } else{
-                //Stop the animation
-                currAnim = "";
-                //Reset all variables
-                currentDuration = defaultDuration;
-                delete[] fileContentFrm;
-                delete[] fileContentAni;
-                nextFrameFileIndex = 0;
-                firstFrameFileIndex = 0;
-                nextAnimationFileIndex = 0;
-                isLoaded = false;
-              }
-
-            }
-        }
-      }
     }
 
     void updateAnimationFileList() {
       Serial.println("Updating List");
       String retStr = "";
       WLED_FS.begin();
-      File root = WLED_FS.open("/");
+      File root = WLED_FS.open("/", "r");
       File file = root.openNextFile();
       while (file) {
         String fileName = file.name();
@@ -394,6 +243,8 @@ class PixelArtHelper : public Usermod {
       if (!stateJson.isNull()) {
         // expect JSON usermod data in usermod name object: {"ExampleUsermod:{"user0":10}"}
          currAnim = stateJson["anim"] | currAnim; //if "anim" key exists in JSON, update, else keep old value
+
+
       }
       // you can as well check WLED state JSON keys
       //if (root["bri"] == 255) Serial.println(F("Don't burn down your garage!"));
@@ -503,7 +354,18 @@ class PixelArtHelper : public Usermod {
     void appendConfigData()
     {}
 
-
+    void resetAnimation(){
+          Serial.println(currAnim);
+          Serial.println("Resetting/Stopping animation");
+          delete[] fileContentFrm;
+          delete[] fileContentAni;
+          fileSizeFrm = 0;
+          fileSizeAni = 0;
+          isLoaded = false;
+          nextFrameFileIndex = 0;
+          firstFrameFileIndex = 0; 
+          nextAnimationFileIndex = 0;
+    }
     /*
      * handleOverlayDraw() is called just before every show() (LED strip update frame) after effects have set the colors.
      * Use this to blank out some LEDs or set them to a different color regardless of the set effect mode.
@@ -511,13 +373,202 @@ class PixelArtHelper : public Usermod {
      */
     void handleOverlayDraw()
     {
-      //strip.setPixelColor(0, RGBW32(0,0,0,0)) // set the first pixel to black
-      strip.setPixelColor(0, RGBW32(0,255,0,0));
-      strip.setPixelColor(2, RGBW32(255,0,0,0));
+      if (currAnim != ""){ //Don't do anything if no flow is active, not sure how that will work with the activation through JSON, but we'll see
+        if (millis() - lastTime > currentDuration) {   
+          Serial.begin(115200);
+          Serial.println("Start");
+          Serial.print("Entered the function: ");
+          Serial.println(millis());
+          lastTime = millis();
+            // Get the free heap size
+          size_t freeHeap = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+          Serial.print("Free heap size: ");
+          Serial.print(freeHeap);
+          Serial.println(" bytes");
 
+          //currentDuration = 5000;
+          //Check if the files are loaded into RAM
+          if(isLoaded){
+
+
+
+
+
+            //If the animation is loaded, then we should of course not load it again, just move to the next frame and carry on 
+            Serial.println("Animation is loaded into RAM allready, render next frame please: ");
+            lastTime = millis();//Start the timer directly to ensure timing precision over "show time", i.e. duration is time between start and next start, no matter the drawing time
+            nextAnimationFileIndex += 3; //Move 3 bytes on to the next animation frame
+            uint8_t thisFrame = 0; //Initialize the variable
+            Serial.print("NextAniFileIndex: ");
+            Serial.print(nextAnimationFileIndex);
+            Serial.print("File Size Ani: ");
+            Serial.print(fileSizeAni);
+            
+            if(nextAnimationFileIndex >= fileSizeAni){
+              // We've ended up here because the frames file is not EOF, but the animation file is. This means there is a 255 frame in the animation file. We should read duration from position 1 and 2 in the array and set the frame to 255
+              
+              thisFrame = 255;
+              nextAnimationFileIndex = 0;
+              currentDuration = ((fileContentAni[1] << 8) | fileContentAni[2])*10; //Duration in 1/100th of a second * 10 for milliseconds
+            } else {
+              Serial.print("File index of animation file is: ");
+              Serial.println(nextAnimationFileIndex);
+              thisFrame = fileContentAni[nextAnimationFileIndex]; //There COULD be frames with no changes, i,e, no frames to change. So step throug all frames by ID
+              currentDuration = ((fileContentAni[nextAnimationFileIndex+1] << 8) | fileContentAni[nextAnimationFileIndex+2])*10; //Duration in 1/100th of a second * 10 for milliseconds
+            }
+
+            Serial.print("This frame id: ");
+            Serial.print(thisFrame);
+            Serial.print(". Duration in animation file: ");
+            Serial.println(currentDuration);
+            Serial.print("Next Frame FileIndex: ");
+            Serial.print(nextFrameFileIndex);
+            Serial.print("File size frm: ");
+            Serial.println(fileSizeFrm);
+
+
+            for (uint32_t i = nextFrameFileIndex; i < fileSizeFrm; i += 6) { //Start from the index where w noticed a change in 
+                uint8_t thisPixelFrame = fileContentFrm[i]; //Read the first byte into a 8bit int representing the frame
+                if (thisPixelFrame == thisFrame){ //We are still draving the same frame
+                  uint16_t pixelPosition = (fileContentFrm[i+1] << 8) | fileContentFrm[i+2];// read bytes 2 and 3 into a 16-bit integer representing the pixelPosition
+                  uint8_t RedValue = fileContentFrm[i+3];// extract the next three bytes as 8-bit integers
+                  uint8_t GreenValue = fileContentFrm[i+4];
+                  uint8_t BlueValue = fileContentFrm[i+5];
+
+                  // call strip.setPixelColor() function with the extracted values
+                  strip.setPixelColor(pixelPosition, RGBW32(RedValue,GreenValue,BlueValue,0));
+                  if(i + 6 >= fileSizeFrm){
+                    //Next frame is outside of file, i.e. frames file is at its last pixel.
+                    nextFrameFileIndex = fileSizeFrm;
+                  }
+                } else {
+                  nextFrameFileIndex = i; //This is the next frames first byte
+                  break; //Drawing, this frame done
+                }
+            }
+            Serial.print("Done with pixels of frame: ");
+            Serial.print(thisFrame);
+            if (nextFrameFileIndex >= fileSizeFrm){
+              //End of the animation file
+              Serial.print("animation end: ");
+              if (thisFrame == 255)
+              {
+                //animation should repeat
+                Serial.print("Restarting");
+                thisFrame = 0;
+                nextFrameFileIndex = firstFrameFileIndex;
+                nextAnimationFileIndex = 0;
+              } else {
+                resetAnimation();
+              }
+              
+            }
+            Serial.print(" Next pixel index: ");
+            Serial.print(nextFrameFileIndex/6);
+            lastTime = millis();//On load restart the timer after this step i done to preserve duration of first frame, first time
+            //currentDuration = (fileContentAni[1] << 8) | fileContentAni[2]; //Duration in 1/100th of a second * 10 for milliseconds
+            Serial.print("Current duration set to: ");
+            Serial.println(currentDuration);
+            //currentDuration = currentDuration * 10;
+            //Serial.print("Current duration set to: ");
+            //Serial.println(currentDuration);
+            Serial.println("...............................................");
+
+
+
+
+          }
+          else {
+            //If not
+            // Load them
+            isLoaded = true; //Add some error handling here, on any error isLoaded should probably be set to false, and the memoryArrays cleared
+            Serial.print("Loading .frm file: ");
+            File fileFrm = WLED_FS.open("/" + currAnim + ".frm", "r");
+            Serial.println( fileFrm.name());
+            //size_t fileSizeFrm = fileFrm.size(); // Get the size of the file
+            
+            
+            
+            fileSizeFrm = fileFrm.size();
+            FRMfilesize = fileSizeFrm; //If I remove this line, for some reason WLED freezes on startup... 
+
+            fileContentFrm = new uint8_t[fileSizeFrm]; // Create an array to store the file content
+            size_t bytesRead = fileFrm.read(fileContentFrm, fileSizeFrm); // Read the file into the array
+            // Check if the file was read successfully
+            if (bytesRead != fileSizeFrm) {
+                Serial.println("Failed to read .frm file.");
+                return;
+            }
+            // Close the file
+            fileFrm.close();
+            Serial.print("Frames file loaded into memory. Size of file: ");
+            Serial.println(bytesRead);
+
+            Serial.print("Loading .ani file: ");
+            File fileAni = WLED_FS.open("/" + currAnim + ".ani", "r");
+            Serial.println( fileAni.name());
+            fileSizeAni = fileAni.size(); // Get the size of the file
+            ANIfilesize = fileSizeAni; //If I remove this line, for some reason WLED freezes on startup... 
+
+            fileContentAni = new uint8_t[fileSizeAni]; // Create an array to store the file content
+            bytesRead = fileAni.read(fileContentAni, fileSizeAni); // Read the file into the array
+            // Check if the file was read successfully
+            if (bytesRead != fileSizeAni) {
+                Serial.println("Failed to read .ani file.");
+                return;
+            }
+            // Close the file
+            fileAni.close();
+            Serial.print("Animation file loaded into memory. Size of file ");
+            Serial.print(fileSizeAni);
+            Serial.print( ". Number of frames in animation: ");
+            Serial.println(fileSizeAni/3);          
+            
+            //Set curentDuration from index 0
+            //uint8_t frameIndex = fileContentAni[0]; //Should be 0 unless something is wrong
+            //currentDuration = ((fileContentAni[1] << 8) | fileContentAni[2])*10; //Duration in 1/100th of a second * 10 for milliseconds
+
+            //This frame is always complete. Sets all leds
+            uint8_t thisFrame = 0;
+            
+            Serial.print("Number of individual pixel refreshes in animation: ");
+            Serial.println(fileSizeFrm/(6*8));
+
+            for (uint32_t i = 0; i < fileSizeFrm; i += 6) { //While the first byte is 0, we are on the first frame
+                uint8_t thisPixelFrame = fileContentFrm[i]; //Read the first byte into a 8bit int representing the frame
+                if (thisPixelFrame == thisFrame){ //We are still draving the same frame
+                  uint16_t pixelPosition = (fileContentFrm[i+1] << 8) | fileContentFrm[i+2];// read bytes 2 and 3 into a 16-bit integer representing the pixelPosition
+                  uint8_t RedValue = fileContentFrm[i+3];// extract the next three bytes as 8-bit integers
+                  uint8_t GreenValue = fileContentFrm[i+4];
+                  uint8_t BlueValue = fileContentFrm[i+5];
+
+                  // call strip.setPixelColor() function with the extracted values
+                  strip.setPixelColor(pixelPosition, RGBW32(RedValue,GreenValue,BlueValue,0));
+
+                } else {
+                  firstFrameFileIndex = firstFrameFileIndex + i; //This is the index we want to start looping from when we go back from 255, so we don't have to read through the entire first frame again
+                  nextFrameFileIndex = nextFrameFileIndex + i; //This is the next frames first byte
+                  Serial.print("Break at: ");
+                  Serial.println(nextFrameFileIndex);
+                  break; //Drawing, first frame done
+                }
+            }
+            Serial.print("Done with pixels of frame. Next pixel: ");
+            Serial.print(nextFrameFileIndex/6);
+            lastTime = millis();//On load restart the timer after this step i done to preserve duration of first frame, first time
+            currentDuration = (fileContentAni[1] << 8) | fileContentAni[2]; //Duration in 1/100th of a second * 10 for milliseconds
+            currentDuration = currentDuration * 10;
+            Serial.print(". Current duration set to: ");
+            Serial.println(currentDuration);
+            Serial.println("...............................................");                
+          }
+        }
+      } else {
+        if(isLoaded){
+          resetAnimation();
+        }
+      }
     }
-
-
     /**
      * handleButton() can be used to override default button behaviour. Returning true
      * will prevent button working in a default way.
