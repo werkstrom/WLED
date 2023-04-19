@@ -39,6 +39,7 @@ class PixelArtHelper : public Usermod {
     unsigned long lastTime = 0;
 
     unsigned long currentDuration = 1000; 
+    double durationMultiplyer = 1.00;
     String currAnim = ""; //This holds the current flow, If empty, no flow is active. When "stop" command is recived this will be cleared to ""
     String currScript = ""; //This is not yet implemented but should hold a list of animations and the duration of each, basically an animation of animations (to save space)
     String curDirList = ""; //commasepparated list of the available .ani files
@@ -46,6 +47,10 @@ class PixelArtHelper : public Usermod {
     String animationFileEnd = ".ani"; // Should be .ani
     String framesFileEnd = ".frm";
     String scriptFileEnd = ".scr";
+    File fileDirectFrm;
+    File fileDirectAni;
+    int RenderedFromRam = 0;
+    int RenderedFromFile = 0;
 
 
     // set your config variables to their boot default value (this can also be done in readFromConfig() or a constructor if you prefer)
@@ -57,7 +62,7 @@ class PixelArtHelper : public Usermod {
     //Set the default sleep time to one second, This should be read from config, would be nice
     //Not even sure this should be set like this at all. Depends on what we can do with JSON API
     unsigned long defaultDuration = 1000;
-    bool inMemCommands = true; //Load the command into ram on first call (on command), only true implemented for now. With a different file read logic, each kommand should be possible to read at runtime, if necessary
+    bool inMemCommands = false; //Load the command into ram on first call (on command), only true implemented for now. With a different file read logic, each kommand should be possible to read at runtime, if necessary
     
     //These are the main variables, holding the amination data in mem.
     uint8_t* fileContentFrm;
@@ -130,6 +135,7 @@ class PixelArtHelper : public Usermod {
       currentDuration = defaultDuration;
       Serial.begin(115200);
       initDone = true;
+
     }
 
 
@@ -293,6 +299,7 @@ class PixelArtHelper : public Usermod {
       //save these vars persistently whenever settings are saved
       top["great"] = userVar0;
       top["defaultDuration"] = defaultDuration;
+      //top["durationMultiplyer"] = durationMultiplyer;
       //top["testInt"] = testInt;
       //top["testLong"] = testLong;
       //top["testULong"] = testULong;
@@ -330,6 +337,7 @@ class PixelArtHelper : public Usermod {
 
       configComplete &= getJsonValue(top["great"], userVar0);
       configComplete &= getJsonValue(top["deafaultDuration"], defaultDuration);
+      //configComplete &= getJsonValue(top["durationMultiplyer"], durationMultiplyer);
       //configComplete &= getJsonValue(top["testULong"], testULong);
       //configComplete &= getJsonValue(top["testFloat"], testFloat);
       //configComplete &= getJsonValue(top["testString"], testString);
@@ -353,6 +361,69 @@ class PixelArtHelper : public Usermod {
      */
     void appendConfigData()
     {}
+    
+    void getFrameInfo(int thisFileIndex, uint8_t* frameID, int* frameDuration){
+      if(inMemCommands){
+        *frameID = fileContentAni[thisFileIndex]; //There COULD be frames with no changes, i,e, no frames to change. So step throug all frames by ID
+        *frameDuration = (int)(((fileContentAni[thisFileIndex+1] << 8) | fileContentAni[thisFileIndex+2])*10*durationMultiplyer); //Duration in 1/100th of a second * 10 for milliseconds
+        Serial.println("Reading Frameinfo from MEM");
+      } else {
+        //Get data from FLASH
+        if (!fileDirectAni.available()){
+          fileDirectAni = WLED_FS.open("/" + currAnim + ".", "r");
+        }
+        fileDirectAni.seek(thisFileIndex);
+        fileDirectAni.read(&*frameID, 1);
+        fileDirectFrm.read((uint8_t *)&*frameDuration, sizeof(*frameDuration));
+        *frameDuration = (*frameDuration >> 8) | (*frameDuration << 8);
+        *frameDuration = (int)(*frameDuration * durationMultiplyer);
+      }
+    }
+
+    uint8_t getThisFrameID(int thisFileIndex){
+      uint8_t result;
+      if(inMemCommands){
+        //Get data from RAM
+        result = fileContentFrm[thisFileIndex];
+      } else {
+        //Get data from FLASH
+        if (!fileDirectFrm.available()){
+          fileDirectFrm = WLED_FS.open("/" + currAnim + ".frm", "r");
+        }
+        fileDirectFrm.seek(thisFileIndex);
+        fileDirectFrm.read(&result, 1);
+      }
+      return result;
+    }
+
+    void setThisPixel(int thisFileIndex){
+      uint16_t pixelPosition;
+      uint8_t RedValue;
+      uint8_t GreenValue;
+      uint8_t BlueValue;
+      if(inMemCommands){
+        //Get data from RAM
+        pixelPosition = (fileContentFrm[thisFileIndex+1] << 8) | fileContentFrm[thisFileIndex+2];// read bytes 2 and 3 into a 16-bit integer representing the pixelPosition
+        RedValue = fileContentFrm[thisFileIndex+3];// extract the next three bytes as 8-bit integers
+        GreenValue = fileContentFrm[thisFileIndex+4];
+        BlueValue = fileContentFrm[thisFileIndex+5];
+        RenderedFromRam += 1;
+      } else {
+        //Get data from FLASH
+        if (!fileDirectFrm.available()){
+          fileDirectFrm = WLED_FS.open("/" + currAnim + ".frm", "r");
+        }
+        fileDirectFrm.seek(thisFileIndex+1);
+        fileDirectFrm.read((uint8_t *)&pixelPosition, sizeof(pixelPosition));
+        // Convert the byte order (ESP32 is little-endian)
+        pixelPosition = (pixelPosition >> 8) | (pixelPosition << 8);
+        fileDirectFrm.read(&RedValue, 1);
+        fileDirectFrm.read(&GreenValue, 1);
+        fileDirectFrm.read(&BlueValue, 1);
+        RenderedFromFile +=1;
+      }
+    strip.setPixelColor(pixelPosition, RGBW32(RedValue,GreenValue,BlueValue,0));
+    }
 
     void resetAnimation(){
           Serial.println(currAnim);
@@ -385,15 +456,14 @@ class PixelArtHelper : public Usermod {
           Serial.print("Free heap size: ");
           Serial.print(freeHeap);
           Serial.println(" bytes");
+          uint32_t flashSize = ESP.getFlashChipSize();
+          Serial.printf("Flash size: %d bytes\n", flashSize);
+          flashSize = ESP.getFreeSketchSpace();
+          Serial.printf("Available flash size: %d bytes\n", flashSize);
 
           //currentDuration = 5000;
           //Check if the files are loaded into RAM
           if(isLoaded){
-
-
-
-
-
             //If the animation is loaded, then we should of course not load it again, just move to the next frame and carry on 
             Serial.println("Animation is loaded into RAM allready, render next frame please: ");
             lastTime = millis();//Start the timer directly to ensure timing precision over "show time", i.e. duration is time between start and next start, no matter the drawing time
@@ -406,13 +476,18 @@ class PixelArtHelper : public Usermod {
             
             if(nextAnimationFileIndex >= fileSizeAni){
               // We've ended up here because the frames file is not EOF, but the animation file is. This means there is a 255 frame in the animation file. We should read duration from position 1 and 2 in the array and set the frame to 255
-              
-              thisFrame = 255;
               nextAnimationFileIndex = 0;
+              /*
+              getFrameInfo(0, &thisFrame, &currentDuration);
+              */
               currentDuration = ((fileContentAni[1] << 8) | fileContentAni[2])*10; //Duration in 1/100th of a second * 10 for milliseconds
+              thisFrame = 255;
             } else {
               Serial.print("File index of animation file is: ");
               Serial.println(nextAnimationFileIndex);
+              /*
+              getFrameInfo(nextAnimationFileIndex, &thisFrame, &tcurrentDuration);
+              */
               thisFrame = fileContentAni[nextAnimationFileIndex]; //There COULD be frames with no changes, i,e, no frames to change. So step throug all frames by ID
               currentDuration = ((fileContentAni[nextAnimationFileIndex+1] << 8) | fileContentAni[nextAnimationFileIndex+2])*10; //Duration in 1/100th of a second * 10 for milliseconds
             }
@@ -430,13 +505,7 @@ class PixelArtHelper : public Usermod {
             for (uint32_t i = nextFrameFileIndex; i < fileSizeFrm; i += 6) { //Start from the index where w noticed a change in 
                 uint8_t thisPixelFrame = fileContentFrm[i]; //Read the first byte into a 8bit int representing the frame
                 if (thisPixelFrame == thisFrame){ //We are still draving the same frame
-                  uint16_t pixelPosition = (fileContentFrm[i+1] << 8) | fileContentFrm[i+2];// read bytes 2 and 3 into a 16-bit integer representing the pixelPosition
-                  uint8_t RedValue = fileContentFrm[i+3];// extract the next three bytes as 8-bit integers
-                  uint8_t GreenValue = fileContentFrm[i+4];
-                  uint8_t BlueValue = fileContentFrm[i+5];
-
-                  // call strip.setPixelColor() function with the extracted values
-                  strip.setPixelColor(pixelPosition, RGBW32(RedValue,GreenValue,BlueValue,0));
+                  setThisPixel(i);
                   if(i + 6 >= fileSizeFrm){
                     //Next frame is outside of file, i.e. frames file is at its last pixel.
                     nextFrameFileIndex = fileSizeFrm;
@@ -448,6 +517,10 @@ class PixelArtHelper : public Usermod {
             }
             Serial.print("Done with pixels of frame: ");
             Serial.print(thisFrame);
+            Serial.print(" Pixels renderd from RAM: ");
+            Serial.print(RenderedFromRam);
+            Serial.print(" Pixels renderd from FLASH: ");
+            Serial.print(RenderedFromFile);
             if (nextFrameFileIndex >= fileSizeFrm){
               //End of the animation file
               Serial.print("animation end: ");
@@ -466,17 +539,9 @@ class PixelArtHelper : public Usermod {
             Serial.print(" Next pixel index: ");
             Serial.print(nextFrameFileIndex/6);
             lastTime = millis();//On load restart the timer after this step i done to preserve duration of first frame, first time
-            //currentDuration = (fileContentAni[1] << 8) | fileContentAni[2]; //Duration in 1/100th of a second * 10 for milliseconds
+            
             Serial.print("Current duration set to: ");
             Serial.println(currentDuration);
-            //currentDuration = currentDuration * 10;
-            //Serial.print("Current duration set to: ");
-            //Serial.println(currentDuration);
-            Serial.println("...............................................");
-
-
-
-
           }
           else {
             //If not
@@ -486,9 +551,6 @@ class PixelArtHelper : public Usermod {
             File fileFrm = WLED_FS.open("/" + currAnim + ".frm", "r");
             Serial.println( fileFrm.name());
             //size_t fileSizeFrm = fileFrm.size(); // Get the size of the file
-            
-            
-            
             fileSizeFrm = fileFrm.size();
             FRMfilesize = fileSizeFrm; //If I remove this line, for some reason WLED freezes on startup... 
 
@@ -523,10 +585,6 @@ class PixelArtHelper : public Usermod {
             Serial.print(fileSizeAni);
             Serial.print( ". Number of frames in animation: ");
             Serial.println(fileSizeAni/3);          
-            
-            //Set curentDuration from index 0
-            //uint8_t frameIndex = fileContentAni[0]; //Should be 0 unless something is wrong
-            //currentDuration = ((fileContentAni[1] << 8) | fileContentAni[2])*10; //Duration in 1/100th of a second * 10 for milliseconds
 
             //This frame is always complete. Sets all leds
             uint8_t thisFrame = 0;
@@ -537,14 +595,7 @@ class PixelArtHelper : public Usermod {
             for (uint32_t i = 0; i < fileSizeFrm; i += 6) { //While the first byte is 0, we are on the first frame
                 uint8_t thisPixelFrame = fileContentFrm[i]; //Read the first byte into a 8bit int representing the frame
                 if (thisPixelFrame == thisFrame){ //We are still draving the same frame
-                  uint16_t pixelPosition = (fileContentFrm[i+1] << 8) | fileContentFrm[i+2];// read bytes 2 and 3 into a 16-bit integer representing the pixelPosition
-                  uint8_t RedValue = fileContentFrm[i+3];// extract the next three bytes as 8-bit integers
-                  uint8_t GreenValue = fileContentFrm[i+4];
-                  uint8_t BlueValue = fileContentFrm[i+5];
-
-                  // call strip.setPixelColor() function with the extracted values
-                  strip.setPixelColor(pixelPosition, RGBW32(RedValue,GreenValue,BlueValue,0));
-
+                  setThisPixel(i);
                 } else {
                   firstFrameFileIndex = firstFrameFileIndex + i; //This is the index we want to start looping from when we go back from 255, so we don't have to read through the entire first frame again
                   nextFrameFileIndex = nextFrameFileIndex + i; //This is the next frames first byte
@@ -555,13 +606,23 @@ class PixelArtHelper : public Usermod {
             }
             Serial.print("Done with pixels of frame. Next pixel: ");
             Serial.print(nextFrameFileIndex/6);
+
+
+            
             lastTime = millis();//On load restart the timer after this step i done to preserve duration of first frame, first time
+            /*
+            getFrameInfo(0, &thisFrame, &currentDuration);
+            */
+
             currentDuration = (fileContentAni[1] << 8) | fileContentAni[2]; //Duration in 1/100th of a second * 10 for milliseconds
             currentDuration = currentDuration * 10;
+            
             Serial.print(". Current duration set to: ");
             Serial.println(currentDuration);
-            Serial.println("...............................................");                
+            
           }
+          Serial.print("...............................................");
+          Serial.println(millis());
         }
       } else {
         if(isLoaded){
@@ -569,6 +630,8 @@ class PixelArtHelper : public Usermod {
         }
       }
     }
+
+
     /**
      * handleButton() can be used to override default button behaviour. Returning true
      * will prevent button working in a default way.
@@ -590,6 +653,8 @@ class PixelArtHelper : public Usermod {
       // do your button handling here
       return handled;
     }
+
+
   
 
 #ifndef WLED_DISABLE_MQTT
