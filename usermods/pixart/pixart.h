@@ -69,12 +69,11 @@ class PixelArtHelper : public Usermod {
     size_t fileSizeFrm;
     uint8_t* fileContentAni;
     size_t fileSizeAni = 0;
-    uint32_t nextFrameFileIndex = 0;
-    uint32_t firstFrameFileIndex = 0; //The first position holdning a non 0 frame data, when we loop we want to go to the second frame since frame 255 holds the data of setting upp like frame 0
+    int nextFrameFileIndex = 0;
+    int firstFrameFileIndex = 0; //The first position holdning a non 0 frame data, when we loop we want to go to the second frame since frame 255 holds the data of setting upp like frame 0
     uint16_t nextAnimationFileIndex = 0;
     bool isLoaded = false;
-    size_t FRMfilesize;
-    size_t ANIfilesize;
+    String thisAnimFileName = ""; 
     
 
     // These config variables have defaults set inside readFromConfig()
@@ -249,8 +248,6 @@ class PixelArtHelper : public Usermod {
       if (!stateJson.isNull()) {
         // expect JSON usermod data in usermod name object: {"ExampleUsermod:{"user0":10}"}
          currAnim = stateJson["anim"] | currAnim; //if "anim" key exists in JSON, update, else keep old value
-
-
       }
       // you can as well check WLED state JSON keys
       //if (root["bri"] == 255) Serial.println(F("Don't burn down your garage!"));
@@ -362,21 +359,37 @@ class PixelArtHelper : public Usermod {
     void appendConfigData()
     {}
     
-    void getFrameInfo(int thisFileIndex, uint8_t* frameID, int* frameDuration){
+    void getFrameInfo(int thisFileIndex, uint8_t* frameID, unsigned long* frameDuration){
+      uint16_t readDur;
       if(inMemCommands){
+        //Serial.println("Reading Frameinfo from MEM");
         *frameID = fileContentAni[thisFileIndex]; //There COULD be frames with no changes, i,e, no frames to change. So step throug all frames by ID
         *frameDuration = (int)(((fileContentAni[thisFileIndex+1] << 8) | fileContentAni[thisFileIndex+2])*10*durationMultiplyer); //Duration in 1/100th of a second * 10 for milliseconds
-        Serial.println("Reading Frameinfo from MEM");
       } else {
+        //Serial.println("Reading Frameinfo from FLASH");
         //Get data from FLASH
         if (!fileDirectAni.available()){
-          fileDirectAni = WLED_FS.open("/" + currAnim + ".", "r");
+          //fileDirectAni = WLED_FS.open("/" + currAnim + ".", "r");
+          fileDirectAni = WLED_FS.open(thisAnimFileName, "r");
         }
         fileDirectAni.seek(thisFileIndex);
         fileDirectAni.read(&*frameID, 1);
-        fileDirectFrm.read((uint8_t *)&*frameDuration, sizeof(*frameDuration));
-        *frameDuration = (*frameDuration >> 8) | (*frameDuration << 8);
-        *frameDuration = (int)(*frameDuration * durationMultiplyer);
+        //fileDirectAni.read((uint8_t *)&*frameDuration, 2);
+        fileDirectAni.read((uint8_t *)&readDur, sizeof(readDur));
+        readDur = (readDur >> 8) | (readDur << 8);
+        *frameDuration = (readDur * 10);
+        // Freeze on activation on the below line... Not sure why...
+        //*frameDuration = (unsigned long)((double)*frameDuration * durationMultiplyer);
+        Serial.print("In function: FrameID: ");
+        Serial.print(*frameID);
+        Serial.print(" Bytes dur: ");
+        Serial.print(readDur);
+        Serial.print(" frameDuration: ");
+        Serial.print(*frameDuration);
+        Serial.print(" Multiplyer: ");
+        Serial.print(durationMultiplyer);
+        Serial.print(" thisFileIndex: ");
+        Serial.println(thisFileIndex);
       }
     }
 
@@ -426,8 +439,8 @@ class PixelArtHelper : public Usermod {
     }
 
     void resetAnimation(){
+          Serial.print("Resetting/Stopping animation: ");
           Serial.println(currAnim);
-          Serial.println("Resetting/Stopping animation");
           delete[] fileContentFrm;
           delete[] fileContentAni;
           fileSizeFrm = 0;
@@ -451,7 +464,7 @@ class PixelArtHelper : public Usermod {
           Serial.print("Entered the function: ");
           Serial.println(millis());
           lastTime = millis();
-            // Get the free heap size
+            // Get some rescource info
           size_t freeHeap = heap_caps_get_free_size(MALLOC_CAP_8BIT);
           Serial.print("Free heap size: ");
           Serial.print(freeHeap);
@@ -460,14 +473,77 @@ class PixelArtHelper : public Usermod {
           Serial.printf("Flash size: %d bytes\n", flashSize);
           flashSize = ESP.getFreeSketchSpace();
           Serial.printf("Available flash size: %d bytes\n", flashSize);
+          thisAnimFileName = "/" + currAnim + ".ani";
 
-          //currentDuration = 5000;
-          //Check if the files are loaded into RAM
+          //check the file sizes
+          if (fileSizeAni == 0){
+            Serial.print("Handling .ani file: ");
+            File fileAni = WLED_FS.open("/" + currAnim + ".ani", "r");
+            Serial.println( fileAni.name());
+            if (fileAni.available()){
+              size_t bytesRead = fileAni.size(); // Get the size of the file
+              fileSizeAni = bytesRead;
+            }
+            if(inMemCommands){
+              fileContentAni = new uint8_t[fileSizeAni]; // Create an array to store the file content
+              size_t bytesRead = fileAni.read(fileContentAni, fileSizeAni); // Read the file into the array
+              // Check if the file was read successfully
+              if (bytesRead != fileSizeAni) {
+                  Serial.println("Failed to read .ani file.");
+                  return;
+              }
+            }
+            // Close the file
+            fileAni.close();
+            Serial.print("Animation file loaded into memory. Size of file ");
+            Serial.print(fileSizeAni);
+            Serial.print( ". Number of frames in animation: ");
+            Serial.println(fileSizeAni/3);  
+          }
+
+          Serial.print("Heap after fileSizeAni: ");
+          freeHeap = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+          Serial.println(freeHeap);
+
+          if (fileSizeFrm == 0){
+            Serial.print("Loading .frm file: ");
+            File fileFrm = WLED_FS.open("/" + currAnim + ".frm", "r");
+            Serial.println( fileFrm.name());
+            if (fileFrm.available()){
+              size_t bytesRead = fileFrm.size(); // Get the size of the file
+              fileSizeFrm = bytesRead;
+            }
+            if(inMemCommands){
+              fileContentFrm = new uint8_t[fileSizeFrm]; // Create an array to store the file content
+              size_t bytesRead = fileFrm.read(fileContentFrm, fileSizeFrm); // Read the file into the array
+              // Check if the file was read successfully
+              if (bytesRead != fileSizeFrm) {
+                  Serial.println("Failed to read .frm file.");
+                  return;
+              }
+            }
+            // Close the file
+            fileFrm.close();
+          }
+
+          Serial.print("Heap after fileSizeFrm: ");
+          freeHeap = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+          Serial.println(freeHeap);
+          
+          //Check if the files are loaded into RAM shold be removed!!!!
+          if (!isLoaded){
+            nextAnimationFileIndex = 0;
+            nextFrameFileIndex = 0;
+            isLoaded = true;
+          }
+
           if(isLoaded){
             //If the animation is loaded, then we should of course not load it again, just move to the next frame and carry on 
-            Serial.println("Animation is loaded into RAM allready, render next frame please: ");
+            //Serial.println("Animation is loaded into RAM allready , render next frame please: ");
             lastTime = millis();//Start the timer directly to ensure timing precision over "show time", i.e. duration is time between start and next start, no matter the drawing time
-            nextAnimationFileIndex += 3; //Move 3 bytes on to the next animation frame
+            
+            
+
             uint8_t thisFrame = 0; //Initialize the variable
             Serial.print("NextAniFileIndex: ");
             Serial.print(nextAnimationFileIndex);
@@ -477,20 +553,20 @@ class PixelArtHelper : public Usermod {
             if(nextAnimationFileIndex >= fileSizeAni){
               // We've ended up here because the frames file is not EOF, but the animation file is. This means there is a 255 frame in the animation file. We should read duration from position 1 and 2 in the array and set the frame to 255
               nextAnimationFileIndex = 0;
-              /*
+
               getFrameInfo(0, &thisFrame, &currentDuration);
-              */
-              currentDuration = ((fileContentAni[1] << 8) | fileContentAni[2])*10; //Duration in 1/100th of a second * 10 for milliseconds
+              //currentDuration = ((fileContentAni[1] << 8) | fileContentAni[2])*10; //Duration in 1/100th of a second * 10 for milliseconds
               thisFrame = 255;
             } else {
               Serial.print("File index of animation file is: ");
               Serial.println(nextAnimationFileIndex);
-              /*
-              getFrameInfo(nextAnimationFileIndex, &thisFrame, &tcurrentDuration);
-              */
-              thisFrame = fileContentAni[nextAnimationFileIndex]; //There COULD be frames with no changes, i,e, no frames to change. So step throug all frames by ID
-              currentDuration = ((fileContentAni[nextAnimationFileIndex+1] << 8) | fileContentAni[nextAnimationFileIndex+2])*10; //Duration in 1/100th of a second * 10 for milliseconds
+
+              getFrameInfo(nextAnimationFileIndex, &thisFrame, &currentDuration);
             }
+
+            Serial.print("Heap after Frame info: ");
+            freeHeap = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+            Serial.println(freeHeap);
 
             Serial.print("This frame id: ");
             Serial.print(thisFrame);
@@ -501,9 +577,12 @@ class PixelArtHelper : public Usermod {
             Serial.print("File size frm: ");
             Serial.println(fileSizeFrm);
 
-
-            for (uint32_t i = nextFrameFileIndex; i < fileSizeFrm; i += 6) { //Start from the index where w noticed a change in 
-                uint8_t thisPixelFrame = fileContentFrm[i]; //Read the first byte into a 8bit int representing the frame
+            
+            for (int i = nextFrameFileIndex; i < fileSizeFrm; i += 6) { //Start from the index where w noticed a change in 
+                //Serial.print("loop");
+                
+                //uint8_t thisPixelFrame = fileContentFrm[i]; //Read the first byte into a 8bit int representing the frame
+                uint8_t thisPixelFrame = getThisFrameID(i);
                 if (thisPixelFrame == thisFrame){ //We are still draving the same frame
                   setThisPixel(i);
                   if(i + 6 >= fileSizeFrm){
@@ -511,10 +590,19 @@ class PixelArtHelper : public Usermod {
                     nextFrameFileIndex = fileSizeFrm;
                   }
                 } else {
+                  
+                  if(thisFrame == 0) {
+                    firstFrameFileIndex = i; //This is the index we want to start looping from when we go back from 255, so we don't have to read through the entire first frame again
+                  }
+                  
                   nextFrameFileIndex = i; //This is the next frames first byte
                   break; //Drawing, this frame done
                 }
             }
+
+            Serial.print("Heap after Pixel rendering: ");
+            freeHeap = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+            Serial.println(freeHeap);
             Serial.print("Done with pixels of frame: ");
             Serial.print(thisFrame);
             Serial.print(" Pixels renderd from RAM: ");
@@ -524,17 +612,17 @@ class PixelArtHelper : public Usermod {
             if (nextFrameFileIndex >= fileSizeFrm){
               //End of the animation file
               Serial.print("animation end: ");
-              if (thisFrame == 255)
-              {
+              if (thisFrame == 255){
                 //animation should repeat
                 Serial.print("Restarting");
                 thisFrame = 0;
                 nextFrameFileIndex = firstFrameFileIndex;
-                nextAnimationFileIndex = 0;
+                nextAnimationFileIndex = 3;
               } else {
                 resetAnimation();
-              }
-              
+              }  
+            } else {
+              nextAnimationFileIndex += 3; //Move 3 bytes on to the next animation frame
             }
             Serial.print(" Next pixel index: ");
             Serial.print(nextFrameFileIndex/6);
@@ -543,84 +631,9 @@ class PixelArtHelper : public Usermod {
             Serial.print("Current duration set to: ");
             Serial.println(currentDuration);
           }
-          else {
-            //If not
-            // Load them
-            isLoaded = true; //Add some error handling here, on any error isLoaded should probably be set to false, and the memoryArrays cleared
-            Serial.print("Loading .frm file: ");
-            File fileFrm = WLED_FS.open("/" + currAnim + ".frm", "r");
-            Serial.println( fileFrm.name());
-            //size_t fileSizeFrm = fileFrm.size(); // Get the size of the file
-            fileSizeFrm = fileFrm.size();
-            FRMfilesize = fileSizeFrm; //If I remove this line, for some reason WLED freezes on startup... 
-
-            fileContentFrm = new uint8_t[fileSizeFrm]; // Create an array to store the file content
-            size_t bytesRead = fileFrm.read(fileContentFrm, fileSizeFrm); // Read the file into the array
-            // Check if the file was read successfully
-            if (bytesRead != fileSizeFrm) {
-                Serial.println("Failed to read .frm file.");
-                return;
-            }
-            // Close the file
-            fileFrm.close();
-            Serial.print("Frames file loaded into memory. Size of file: ");
-            Serial.println(bytesRead);
-
-            Serial.print("Loading .ani file: ");
-            File fileAni = WLED_FS.open("/" + currAnim + ".ani", "r");
-            Serial.println( fileAni.name());
-            fileSizeAni = fileAni.size(); // Get the size of the file
-            ANIfilesize = fileSizeAni; //If I remove this line, for some reason WLED freezes on startup... 
-
-            fileContentAni = new uint8_t[fileSizeAni]; // Create an array to store the file content
-            bytesRead = fileAni.read(fileContentAni, fileSizeAni); // Read the file into the array
-            // Check if the file was read successfully
-            if (bytesRead != fileSizeAni) {
-                Serial.println("Failed to read .ani file.");
-                return;
-            }
-            // Close the file
-            fileAni.close();
-            Serial.print("Animation file loaded into memory. Size of file ");
-            Serial.print(fileSizeAni);
-            Serial.print( ". Number of frames in animation: ");
-            Serial.println(fileSizeAni/3);          
-
-            //This frame is always complete. Sets all leds
-            uint8_t thisFrame = 0;
-            
-            Serial.print("Number of individual pixel refreshes in animation: ");
-            Serial.println(fileSizeFrm/(6*8));
-
-            for (uint32_t i = 0; i < fileSizeFrm; i += 6) { //While the first byte is 0, we are on the first frame
-                uint8_t thisPixelFrame = fileContentFrm[i]; //Read the first byte into a 8bit int representing the frame
-                if (thisPixelFrame == thisFrame){ //We are still draving the same frame
-                  setThisPixel(i);
-                } else {
-                  firstFrameFileIndex = firstFrameFileIndex + i; //This is the index we want to start looping from when we go back from 255, so we don't have to read through the entire first frame again
-                  nextFrameFileIndex = nextFrameFileIndex + i; //This is the next frames first byte
-                  Serial.print("Break at: ");
-                  Serial.println(nextFrameFileIndex);
-                  break; //Drawing, first frame done
-                }
-            }
-            Serial.print("Done with pixels of frame. Next pixel: ");
-            Serial.print(nextFrameFileIndex/6);
-
-
-            
-            lastTime = millis();//On load restart the timer after this step i done to preserve duration of first frame, first time
-            /*
-            getFrameInfo(0, &thisFrame, &currentDuration);
-            */
-
-            currentDuration = (fileContentAni[1] << 8) | fileContentAni[2]; //Duration in 1/100th of a second * 10 for milliseconds
-            currentDuration = currentDuration * 10;
-            
-            Serial.print(". Current duration set to: ");
-            Serial.println(currentDuration);
-            
-          }
+          Serial.print("Hap when all is set and done: ");
+          freeHeap = heap_caps_get_free_size(MALLOC_CAP_8BIT);
+          Serial.println(freeHeap);
           Serial.print("...............................................");
           Serial.println(millis());
         }
