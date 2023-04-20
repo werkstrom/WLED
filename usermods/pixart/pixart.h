@@ -38,7 +38,7 @@ class PixelArtHelper : public Usermod {
     bool initDone = false;
     unsigned long lastTime = 0;
 
-    unsigned long currentDuration = 1000; 
+    unsigned long currentDuration = 10; 
     double durationMultiplyer = 1.00;
     String currAnim = ""; //This holds the current flow, If empty, no flow is active. When "stop" command is recived this will be cleared to ""
     String currScript = ""; //This is not yet implemented but should hold a list of animations and the duration of each, basically an animation of animations (to save space)
@@ -62,7 +62,8 @@ class PixelArtHelper : public Usermod {
     //Set the default sleep time to one second, This should be read from config, would be nice
     //Not even sure this should be set like this at all. Depends on what we can do with JSON API
     unsigned long defaultDuration = 1000;
-    bool inMemCommands = false; //Load the command into ram on first call (on command), only true implemented for now. With a different file read logic, each kommand should be possible to read at runtime, if necessary
+    uint16_t pixelsInBuffer = 0;
+    bool inMemCommands = true; //Load the command into ram on first call (on command), only true implemented for now. With a different file read logic, each kommand should be possible to read at runtime, if necessary
     
     //These are the main variables, holding the amination data in mem.
     uint8_t* fileContentFrm;
@@ -292,6 +293,8 @@ class PixelArtHelper : public Usermod {
       //save these vars persistently whenever settings are saved
       top["great"] = userVar0;
       top["defaultDuration"] = defaultDuration;
+      top["pixels_in_buffer"] = pixelsInBuffer;
+      top["inMem"] = inMemCommands;
       //top["durationMultiplyer"] = durationMultiplyer;
       //top["testInt"] = testInt;
       //top["testLong"] = testLong;
@@ -330,6 +333,8 @@ class PixelArtHelper : public Usermod {
 
       configComplete &= getJsonValue(top["great"], userVar0);
       configComplete &= getJsonValue(top["deafaultDuration"], defaultDuration);
+      configComplete &= getJsonValue(top["frames_in_buffer"], pixelsInBuffer, 4000);
+      configComplete &= getJsonValue(top["frames_in_buffer"], inMemCommands, false);
       //configComplete &= getJsonValue(top["durationMultiplyer"], durationMultiplyer);
       //configComplete &= getJsonValue(top["testULong"], testULong);
       //configComplete &= getJsonValue(top["testFloat"], testFloat);
@@ -439,7 +444,7 @@ class PixelArtHelper : public Usermod {
     {
       if (currAnim != ""){ //Don't do anything if no flow is active, not sure how that will work with the activation through JSON, but we'll see
         if (millis() - lastTime > currentDuration) {
-
+          
           lastTime = millis();
           thisAnimFileName = "/" + currAnim + ".ani";
 
@@ -489,51 +494,65 @@ class PixelArtHelper : public Usermod {
             isLoaded = true;
           }
 
-
-            lastTime = millis();//Start the timer directly to ensure timing precision over "show time", i.e. duration is time between start and next start, no matter the drawing time
-            uint8_t thisFrame = 0; //Initialize the variable
-            if(nextAnimationFileIndex >= fileSizeAni){
-              // We've ended up here because the frames file is not EOF, but the animation file is. This means there is a 255 frame in the animation file. We should read duration from position 1 and 2 in the array and set the frame to 255
-              nextAnimationFileIndex = 0;
-              getFrameInfo(0, &thisFrame, &currentDuration);
-              thisFrame = 255;
-            } else {
-              getFrameInfo(nextAnimationFileIndex, &thisFrame, &currentDuration);
-            }
-            
-            for (int i = nextFrameFileIndex; i < fileSizeFrm; i += 6) { //Start from the index where w noticed a change in 
-                uint8_t thisPixelFrame = getThisFrameID(i);
-                if (thisPixelFrame == thisFrame){ //We are still draving the same frame
-                  setThisPixel(i);
-                  if(i + 6 >= fileSizeFrm){
-                    //Next frame is outside of file, i.e. frames file is at its last pixel.
-                    nextFrameFileIndex = fileSizeFrm;
-                  }
-                } else {
-                  
-                  if(thisFrame == 0) {
-                    firstFrameFileIndex = i; //This is the index we want to start looping from when we go back from 255, so we don't have to read through the entire first frame again
-                  }
-                  
-                  nextFrameFileIndex = i; //This is the next frames first byte
-                  break; //Drawing, this frame done
+          uint8_t thisFrame = 0; //Initialize the variable
+          if(nextAnimationFileIndex >= fileSizeAni){
+            // We've ended up here because the frames file is not EOF, but the animation file is. This means there is a 255 frame in the animation file. We should read duration from position 1 and 2 in the array and set the frame to 255
+            nextAnimationFileIndex = 0;
+            getFrameInfo(0, &thisFrame, &currentDuration);
+            thisFrame = 255;
+          } else {
+            getFrameInfo(nextAnimationFileIndex, &thisFrame, &currentDuration);
+          }
+          unsigned long timeUpToRender = millis() - lastTime;
+          for (int i = nextFrameFileIndex; i < fileSizeFrm; i += 6) { //Start from the index where w noticed a change in 
+              uint8_t thisPixelFrame = getThisFrameID(i);
+              if (thisPixelFrame == thisFrame){ //We are still draving the same frame
+                setThisPixel(i);
+                if(i + 6 >= fileSizeFrm){
+                  //Next frame is outside of file, i.e. frames file is at its last pixel.
+                  nextFrameFileIndex = fileSizeFrm;
                 }
-            }
-            if (nextFrameFileIndex >= fileSizeFrm){
-              //End of the animation file
-              if (thisFrame == 255){
-                //animation should repeat
-                thisFrame = 0;
-                nextFrameFileIndex = firstFrameFileIndex;
-                nextAnimationFileIndex = 3;
               } else {
-                resetAnimation();
-              }  
+                
+                if(thisFrame == 0) {
+                  firstFrameFileIndex = i; //This is the index we want to start looping from when we go back from 255, so we don't have to read through the entire first frame again
+                }
+                
+                nextFrameFileIndex = i; //This is the next frames first byte
+                break; //Drawing, this frame done
+              }
+          }
+          unsigned long timeInRenderLoop = millis() - lastTime - timeUpToRender;
+          if (nextFrameFileIndex >= fileSizeFrm){
+            //End of the animation file
+            if (thisFrame == 255){
+              //animation should repeat
+              thisFrame = 0;
+              nextFrameFileIndex = firstFrameFileIndex;
+              nextAnimationFileIndex = 3;
             } else {
-              nextAnimationFileIndex += 3; //Move 3 bytes on to the next animation frame
-            }
-            lastTime = millis();//On load restart the timer after this step i done to preserve duration of first frame, first time
-
+              resetAnimation();
+            }  
+          } else {
+            nextAnimationFileIndex += 3; //Move 3 bytes on to the next animation frame
+          }
+          unsigned long usedTime = millis() - lastTime;
+          uint16_t fps = strip.getFps();
+          //strip.getModeData(1);
+          Serial.print("Frame ");
+          Serial.print(thisFrame);
+          Serial.print(" rendered ");
+          if(inMemCommands){Serial.print("from RAM ");} else {Serial.print("from FLASH ");}
+          Serial.print("in: ");
+          Serial.print(usedTime);
+          Serial.print(" ms");
+          Serial.print(" Strip fps: ");
+          Serial.print(fps);
+          Serial.print(" Time before render loop: ");
+          Serial.print(timeUpToRender);
+          Serial.print(" Time in render loop: ");
+          Serial.println( timeInRenderLoop);
+          
         }
       } else {
         if(isLoaded){
