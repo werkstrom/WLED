@@ -582,7 +582,7 @@ function anim(){
     const imgId = imgTG.getAttribute("data-baseimg");
     const durTD = tr.getElementsByClassName("stpDur")[0];
     const durTG =  durTD.querySelector("input");
-    const dur = durTG.value;
+    const dur = durTG.value * 10;
     aAr.push({ stpId: stpId, imgId: imgId, dur: dur });
   });
   curStp = 0;
@@ -970,6 +970,8 @@ gId("sendJSONledbutton").innerHTML =
 gId("repRnDiv").innerHTML = repSVG;
 gId("prwRnDiv").innerHTML = playSVG;
 gId("sndRnDiv").innerHTML = sendSVG;
+
+gId("repPath").setAttribute("fill", accentColor);
 
 //Sets first row, because of minifier :(
 const regex = /XxX/g;
