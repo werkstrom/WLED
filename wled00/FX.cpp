@@ -79,16 +79,17 @@ int8_t tristate_square8(uint8_t x, uint8_t pulsewidth, uint8_t attdec) {
  * No blinking. Just plain old static light.
  */
 uint16_t mode_static(void) {
-  //SEGMENT.fill(SEGCOLOR(0));
+  SEGMENT.fill(SEGCOLOR(0));
   return FRAMETIME;
 }
 static const char _data_FX_MODE_STATIC[] PROGMEM = "Solid";
 
 /*
- * No blinking. Just plain old static light.
+ * No nothing
  */
 uint16_t mode_pixelart(void) {
-  //SEGMENT.fill(SEGCOLOR(0));
+  Serial.print("pixelarttest: ");
+  Serial.println(millis());
   return FRAMETIME;
 }
 static const char _data_FX_MODE_PIXELART[] PROGMEM = "Off";
@@ -7628,6 +7629,7 @@ void WS2812FX::setupEffectData() {
   addEffect(FX_MODE_2DBLACKHOLE, &mode_2DBlackHole, _data_FX_MODE_2DBLACKHOLE);
 
   addEffect(FX_MODE_2DAKEMI, &mode_2DAkemi, _data_FX_MODE_2DAKEMI); // audio
+  addEffect(FX_MODE_PIXELART, &mode_pixelart,_data_FX_MODE_PIXELART);
 #endif // WLED_DISABLE_2D
 
 }

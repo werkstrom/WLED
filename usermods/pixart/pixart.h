@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+//#include "pixarth.h"
 
 
 /*
@@ -135,7 +136,6 @@ class PixelArtHelper : public Usermod {
       currentDuration = defaultDuration;
       Serial.begin(115200);
       initDone = true;
-
     }
 
 
@@ -147,7 +147,10 @@ class PixelArtHelper : public Usermod {
       //Serial.println("Connected to WiFi!");
     }
 
-
+    uint16_t testCode(int testInt){
+        Serial.println(testInt);
+        return 350;
+    }
     /*
      * loop() is called continuously. Here you can check for events, read sensors, etc.
      * 
@@ -294,7 +297,7 @@ class PixelArtHelper : public Usermod {
       top["great"] = userVar0;
       top["defaultDuration"] = defaultDuration;
       top["pixels_in_buffer"] = pixelsInBuffer;
-      top["inMem"] = inMemCommands;
+      //top["inMem"] = inMemCommands;
       //top["durationMultiplyer"] = durationMultiplyer;
       //top["testInt"] = testInt;
       //top["testLong"] = testLong;
@@ -334,7 +337,7 @@ class PixelArtHelper : public Usermod {
       configComplete &= getJsonValue(top["great"], userVar0);
       configComplete &= getJsonValue(top["deafaultDuration"], defaultDuration);
       configComplete &= getJsonValue(top["frames_in_buffer"], pixelsInBuffer, 4000);
-      configComplete &= getJsonValue(top["frames_in_buffer"], inMemCommands, false);
+      //configComplete &= getJsonValue(top["frames_in_buffer"], inMemCommands, false);
       //configComplete &= getJsonValue(top["durationMultiplyer"], durationMultiplyer);
       //configComplete &= getJsonValue(top["testULong"], testULong);
       //configComplete &= getJsonValue(top["testFloat"], testFloat);
@@ -358,8 +361,17 @@ class PixelArtHelper : public Usermod {
      * be careful not to add too much as oappend() buffer is limited to 3k
      */
     void appendConfigData()
-    {}
-    
+    {
+
+    }
+    void printSystemInfo(){
+      Serial.print("Arduino core version: ");
+      Serial.println(ARDUINO);
+      Serial.print("Commands in memory: ");
+      Serial.println(inMemCommands);      
+    }
+
+
     void getFrameInfo(int thisFileIndex, uint8_t* frameID, unsigned long* frameDuration){
       uint16_t readDur;
       if(inMemCommands){
@@ -434,6 +446,8 @@ class PixelArtHelper : public Usermod {
           nextFrameFileIndex = 0;
           firstFrameFileIndex = 0; 
           nextAnimationFileIndex = 0;
+          RenderedFromFile = 0;
+          RenderedFromRam = 0;
     }
     /*
      * handleOverlayDraw() is called just before every show() (LED strip update frame) after effects have set the colors.
@@ -450,6 +464,7 @@ class PixelArtHelper : public Usermod {
 
           //check the file sizes
           if (fileSizeAni == 0){
+            printSystemInfo();
             File fileAni = WLED_FS.open("/" + currAnim + ".ani", "r");
             if (fileAni.available()){
               size_t bytesRead = fileAni.size(); // Get the size of the file
@@ -541,17 +556,27 @@ class PixelArtHelper : public Usermod {
           //strip.getModeData(1);
           Serial.print("Frame ");
           Serial.print(thisFrame);
+          Serial.print(" off ");
+          Serial.print(currAnim);
           Serial.print(" rendered ");
-          if(inMemCommands){Serial.print("from RAM ");} else {Serial.print("from FLASH ");}
+          if(inMemCommands)
+            { 
+              Serial.print("from RAM ");
+            } else {
+              Serial.print("from FLASH ");
+            }
           Serial.print("in: ");
           Serial.print(usedTime);
-          Serial.print(" ms");
-          Serial.print(" Strip fps: ");
+          Serial.print(" ms. (R/F ");
+          Serial.print(RenderedFromRam);
+          Serial.print("/");
+          Serial.print(RenderedFromFile);
+          Serial.print(") Strip fps: ");
           Serial.print(fps);
           Serial.print(" Time before render loop: ");
           Serial.print(timeUpToRender);
           Serial.print(" Time in render loop: ");
-          Serial.println( timeInRenderLoop);
+          Serial.println(timeInRenderLoop);
           
         }
       } else {
