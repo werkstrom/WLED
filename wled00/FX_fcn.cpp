@@ -228,6 +228,7 @@ CRGBPalette16 &Segment::loadPalette(CRGBPalette16 &targetPalette, uint8_t pal) {
     case FX_MODE_GLITTER    : pal = 11; break; // rainbow colors
     case FX_MODE_SUNRISE    : pal = 35; break; // heat palette
     case FX_MODE_RAILWAY    : pal =  3; break; // prim + sec
+    case FX_MODE_2DSOAP     : pal = 11; break; // rainbow colors
   }
   switch (pal) {
     case 0: //default palette. Exceptions for specific effects above
@@ -820,8 +821,22 @@ void Segment::blendPixelColor(int n, uint32_t color, uint8_t blend) {
 }
 
 // Adds the specified color with the existing pixel color perserving color balance.
-void Segment::addPixelColor(int n, uint32_t color) {
-  setPixelColor(n, color_add(getPixelColor(n), color));
+void Segment::addPixelColor(int n, uint32_t color, bool fast) {
+  uint32_t col = getPixelColor(n);
+  uint8_t r = R(col);
+  uint8_t g = G(col);
+  uint8_t b = B(col);
+  uint8_t w = W(col);
+  if (fast) {
+    r = qadd8(r, R(color));
+    g = qadd8(g, G(color));
+    b = qadd8(b, B(color));
+    w = qadd8(w, W(color));
+    col = RGBW32(r,g,b,w);
+  } else {
+    col = color_add(col, color);
+  }
+  setPixelColor(n, col);
 }
 
 void Segment::fadePixelColor(uint16_t n, uint8_t fade) {
@@ -1181,12 +1196,12 @@ void WS2812FX::estimateCurrentAndLimitBri() {
 
   uint32_t powerSum = 0;
 
-  for (uint8_t b = 0; b < busses.getNumBusses(); b++) {
-    Bus *bus = busses.getBus(b);
+  for (uint_fast8_t bNum = 0; bNum < busses.getNumBusses(); bNum++) {
+    Bus *bus = busses.getBus(bNum);
     if (bus->getType() >= TYPE_NET_DDP_RGB) continue; //exclude non-physical network busses
     uint16_t len = bus->getLength();
     uint32_t busPowerSum = 0;
-    for (uint16_t i = 0; i < len; i++) { //sum up the usage of each LED
+    for (uint_fast16_t i = 0; i < len; i++) { //sum up the usage of each LED
       uint32_t c = bus->getPixelColor(i);
       byte r = R(c), g = G(c), b = B(c), w = W(c);
 
