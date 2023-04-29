@@ -85,7 +85,7 @@ uint16_t mode_static(void) {
 static const char _data_FX_MODE_STATIC[] PROGMEM = "Solid";
 
 /*
- * No nothing
+ * No nothing so Pixel Art User Mod can do it's thing
  */
 uint16_t mode_pixelart(void) {
   Serial.print("pixelarttest: ");
@@ -7583,6 +7583,7 @@ void WS2812FX::setupEffectData() {
 
   addEffect(FX_MODE_WAVESINS, &mode_wavesins, _data_FX_MODE_WAVESINS);
   addEffect(FX_MODE_ROCKTAVES, &mode_rocktaves, _data_FX_MODE_ROCKTAVES);
+  addEffect(FX_MODE_PIXELART, &mode_pixelart,_data_FX_MODE_PIXELART);
 
   // --- 2D  effects ---
 #ifndef WLED_DISABLE_2D
@@ -7629,7 +7630,7 @@ void WS2812FX::setupEffectData() {
   addEffect(FX_MODE_2DBLACKHOLE, &mode_2DBlackHole, _data_FX_MODE_2DBLACKHOLE);
 
   addEffect(FX_MODE_2DAKEMI, &mode_2DAkemi, _data_FX_MODE_2DAKEMI); // audio
-  addEffect(FX_MODE_PIXELART, &mode_pixelart,_data_FX_MODE_PIXELART);
+  
 #endif // WLED_DISABLE_2D
 
 }
