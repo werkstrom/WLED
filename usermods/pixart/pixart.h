@@ -7,7 +7,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-//#include "pixarth.h"
 
 
 /*
@@ -50,6 +49,8 @@ class PixelArtHelper : public Usermod {
     String scriptFileEnd = ".scr";
     File fileDirectFrm;
     File fileDirectAni;
+    uint8_t oldMode = 0;
+
     int RenderedFromRam = 0;
     int RenderedFromFile = 0;
 
@@ -71,7 +72,7 @@ class PixelArtHelper : public Usermod {
     size_t fileSizeFrm;
     uint8_t* fileContentAni;
     size_t fileSizeAni = 0;
-    int nextFrameFileIndex = 0;
+    size_t nextFrameFileIndex = 0;
     int firstFrameFileIndex = 0; //The first position holdning a non 0 frame data, when we loop we want to go to the second frame since frame 255 holds the data of setting upp like frame 0
     uint16_t nextAnimationFileIndex = 0;
     bool isLoaded = false;
@@ -457,6 +458,11 @@ class PixelArtHelper : public Usermod {
     void handleOverlayDraw()
     {
       if (currAnim != ""){ //Don't do anything if no flow is active, not sure how that will work with the activation through JSON, but we'll see
+        if (SEGMENT.mode != FX_MODE_PIXELART) {
+          SEGMENT.setMode(FX_MODE_PIXELART);
+          Serial.print("Mode set to: ");
+          Serial.println(SEGMENT.mode);
+        }
         if (millis() - lastTime > currentDuration) {
           
           lastTime = millis();
